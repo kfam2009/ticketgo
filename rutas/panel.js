@@ -2,7 +2,7 @@
 const config = require('../lib/config');
 const { db, transaccion } = require('../lib/db');
 const { esc, firmar, cifrar, descifrar } = require('../lib/util');
-const { enviar, redirigir, leerCuerpo, baseUrl } = require('../lib/http');
+const { enviar, json, redirigir, leerCuerpo, baseUrl } = require('../lib/http');
 const { panel, accion } = require('../lib/vistas');
 const auth = require('../lib/auth');
 const cf = require('../lib/cloudflare');
@@ -12,7 +12,7 @@ const D = require('../lib/datos');
 
 const ESTADOS_EV = { borrador: ['Borrador', ''], publicado: ['Publicado', 'verde'], oculto: ['Oculto (solo con link)', 'amarillo'] };
 const pillEv = (e) => `<span class="pill ${ESTADOS_EV[e][1]}">${ESTADOS_EV[e][0]}</span>`;
-const SEÑAL = { vivo: ['EN VIVO', 'rojo'], repeticion: ['Repetición', 'verde'], procesando: ['Preparando repetición', 'amarillo'], espera: ['Sin señal', ''], terminado: ['Finalizado', ''], cerrado: ['Pausado', ''], error: ['Sin datos', ''] };
+const SEÑAL = { vivo: ['EN VIVO', 'rojo'], repeticion: ['Repetición', 'verde'], procesando: ['Preparando repetición', 'amarillo'], espera: ['Sin señal', ''], terminado: ['Finalizado', ''], cerrado: ['Pausado', ''], error: ['Sin datos', ''], grabado: ['Video listo', 'verde'], sinvideo: ['Falta el video', 'amarillo'] };
 const pillSeñal = (s) => `<span class="pill ${(SEÑAL[s] || SEÑAL.error)[1]}">${(SEÑAL[s] || SEÑAL.error)[0]}</span>`;
 const ESTADOS_OR = { aprobado: ['Aprobada', 'verde'], prueba: ['Prueba', 'cyan'], pendiente: ['Pendiente', 'amarillo'], procesando: ['Procesando', 'amarillo'], rechazado: ['Rechazada', ''], devuelto: ['Devuelta', 'rojo'] };
 const pillOr = (s) => `<span class="pill ${(ESTADOS_OR[s] || ['', ''])[1]}">${(ESTADOS_OR[s] || [s])[0]}</span>`;
@@ -58,7 +58,7 @@ async function inicio(req, res, ctx, url) {
       <div class="img" style="${prox.imagen ? `background-image:url('/img-evento/${prox.id}?v=${prox.imagen.length}')` : 'background:linear-gradient(135deg,#1d2029,#2a1418)'}"></div>
       <div><div class="fila" style="gap:6px;margin-bottom:6px">${pillSeñal(est.estado)} ${pillEv(prox.estado)}</div>
         <h3 style="font-size:26px">${esc(prox.titulo)}</h3><p class="muted" style="margin:2px 0 12px">${D.fechaLinda(prox.fecha) || 'Sin fecha'} · ${prox.vendidas}${prox.cupo ? ' / ' + prox.cupo : ''} entradas vendidas</p>
-        <div class="fila"><a class="btn" href="/panel/eventos/${prox.id}/transmision">Transmitir</a><a class="btn sec" href="/panel/ventas?evento=${prox.id}">Ventas</a>
+        <div class="fila"><a class="btn" href="/panel/eventos/${prox.id}/transmision">${prox.tipo === 'grabado' ? 'Video' : 'Transmitir'}</a><a class="btn sec" href="/panel/ventas?evento=${prox.id}">Ventas</a>
         <a class="btn sec" href="/panel/eventos/${prox.id}">Editar</a><code id="lk" hidden>${esc(baseUrl(req))}/${esc(p.slug)}/${prox.id}</code><button class="btn sec" data-copiar="lk">Copiar link</button></div></div></div>`;
   }
   const cuerpo = `${bienvenida}${test}${susp}
@@ -96,7 +96,7 @@ async function listaEventos(req, res, ctx) {
       <td>${pillSeñal(estados[i].estado)}</td>
       <td>${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</td>
       <td>${e.vendidas}${e.cupo ? ' / ' + e.cupo : ''}</td>
-      <td class="fila"><a class="btn sec chico" href="/panel/eventos/${e.id}">Editar</a><a class="btn sec chico" href="/panel/eventos/${e.id}/transmision">Transmisión</a></td></tr>`).join('');
+      <td class="fila"><a class="btn sec chico" href="/panel/eventos/${e.id}">Editar</a><a class="btn sec chico" href="/panel/eventos/${e.id}/transmision">${e.tipo === 'grabado' ? 'Video' : 'Transmisión'}</a></td></tr>`).join('');
   const cuerpo = `<div class="fila" style="justify-content:space-between"><div><h1>Eventos</h1><p class="sub">Todo lo que publicaste y tus borradores.</p></div>
     <a class="btn" href="/panel/eventos/nuevo">+ Crear evento</a></div>
     <div class="card tabla">${evs.length ? `<table><thead><tr><th>Evento</th><th>Visibilidad</th><th>Señal</th><th>Precio</th><th>Vendidas</th><th></th></tr></thead><tbody>${filas}</tbody></table>`
@@ -111,6 +111,9 @@ function formEvento(res, ctx, ev, err = '') {
     ${err ? `<div class="error">${esc(err)}</div>` : ''}
     <form method="post" class="card">
       <div class="dos"><div>
+        <label>Tipo de evento</label>
+        ${nuevo ? `<select name="tipo"><option value="vivo" ${v.tipo !== 'grabado' ? 'selected' : ''}>En vivo (transmisión desde vMix u OBS)</option><option value="grabado" ${v.tipo === 'grabado' ? 'selected' : ''}>Video grabado (subís el archivo)</option></select>`
+          : `<p style="margin:0"><span class="pill ${v.tipo === 'grabado' ? 'cyan' : 'rojo'}">${v.tipo === 'grabado' ? 'Video grabado' : 'En vivo'}</span></p>`}
         <label>Título</label><input name="titulo" required maxlength="140" value="${esc(v.titulo || '')}" placeholder="Ej: Final del torneo">
         <label>Fecha y hora de inicio</label><input type="datetime-local" name="fecha" value="${esc(D.fechaAInput(v.fecha) || v.fecha_input || '')}">
         <label>Lugar (opcional)</label><input name="lugar" maxlength="120" value="${esc(v.lugar || '')}" placeholder="Ej: Club Estrella, Bahía Blanca">
@@ -148,6 +151,7 @@ async function guardarEvento(req, res, ctx, ev) {
     precio_usd: Number(b.precio_usd) > 0 ? Math.round(Number(b.precio_usd) * 100) / 100 : null,
     cupo: parseInt(b.cupo, 10) > 0 ? parseInt(b.cupo, 10) : null,
     estado: ESTADOS_EV[b.estado] ? b.estado : 'borrador',
+    ...(ev ? {} : { tipo: b.tipo === 'grabado' ? 'grabado' : 'vivo' }),
     venta_activa: b.venta_activa ? 1 : 0,
     grabar: b.grabar ? 1 : 0,
     repeticion_horas: Math.min(Math.max(parseInt(b.repeticion_horas, 10) || 0, 0), 2160),
@@ -159,7 +163,7 @@ async function guardarEvento(req, res, ctx, ev) {
   }
   if (!ev) {
     let s = {};
-    if (config.cloudflareListo()) {
+    if (config.cloudflareListo() && datos.tipo === 'vivo') {
       try { s = await cf.crearEntrada(`${ctx.p.slug} · ${titulo}`, datos.grabar, datos.repeticion_horas); }
       catch (e) { return formEvento(res, ctx, { ...datos }, 'No se pudo crear la señal de transmisión: ' + e.message); }
     }
@@ -175,7 +179,67 @@ async function guardarEvento(req, res, ctx, ev) {
   return redirigir(res, `/panel/eventos/${ev.id}?ok=1`);
 }
 
+/* ------------------------------------------------------------------ video grabado */
+async function paginaVideo(req, res, ctx, ev, url) {
+  const est = await estadoEvento({ ...ev, activo: 1 }).catch((e) => ({ estado: 'error', error: e.message }));
+  const cuerpo = `<p><a href="/panel/eventos">← Eventos</a></p>
+    <div class="fila" style="justify-content:space-between"><div><h1>${esc(ev.titulo)}</h1><p class="sub"><span class="pill cyan">Video grabado</span> ${pillSeñal(est.estado)}</p></div>
+    <div class="fila">${est.estado === 'grabado' ? `<a class="btn" href="/panel/eventos/${ev.id}/prueba" target="_blank" rel="noopener">Ver como comprador</a>` : ''}<a class="btn sec" href="/panel/eventos/${ev.id}">Editar</a></div></div>
+    ${url.searchParams.get('nuevo') ? `<div class="ok">Evento creado${ev.estado === 'borrador' ? ' como <b>borrador</b>' : ''}. Ahora subí el video.</div>` : ''}
+    ${!config.cloudflareListo() ? '<div class="aviso">La plataforma todavía no tiene configurado el servicio de video.</div>' : ''}
+    <h2>Video</h2>
+    <div class="card" id="zona">
+      ${est.estado === 'grabado' ? `<p style="margin-top:0"><b>El video está listo.</b>${est.partes[0] && est.partes[0].duracion ? ` Duración: ${Math.round(est.partes[0].duracion / 60)} minutos.` : ''} Podés reemplazarlo subiendo otro.</p>`
+        : est.estado === 'procesando' ? `<p style="margin-top:0"><b>Preparando el video${est.progreso ? ` (${Math.round(est.progreso)}%)` : ''}…</b> Puede tardar unos minutos según la duración. Esta página se actualiza sola.</p><script>setTimeout(function(){location.reload()},20000)</script>`
+        : '<p style="margin-top:0">Todavía no subiste el video.</p>'}
+      <label for="archivo" class="btn ${est.estado === 'grabado' ? 'sec' : ''}" style="color:#fff;margin:6px 0 0;display:inline-flex">${ev.video_uid ? 'Subir otro video' : 'Elegir video'}</label>
+      <input type="file" id="archivo" accept="video/*,.mp4,.mov,.mkv,.avi,.webm" hidden>
+      <div id="progreso" hidden style="margin-top:14px"><div class="barrita" style="height:10px"><i id="pbar" style="width:0%"></i></div><b id="ptxt">Subiendo…</b> <small id="pdet"></small>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">No cierres esta página mientras sube. Si se corta, volvé a elegir el mismo archivo y sigue desde donde quedó.</p></div>
+      <p class="muted" style="font-size:13px;margin-bottom:0">Formatos: MP4 (recomendado), MOV, MKV. Hasta 6 horas de duración. Archivos grandes (varios GB) sin problema.</p>
+    </div>
+    <h2>Link para compartir</h2>
+    <div class="card"><div class="dato"><code id="d4">${esc(baseUrl(req))}/${esc(ctx.p.slug)}/${ev.id}</code><button class="btn sec chico" data-copiar="d4">Copiar</button></div></div>
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
+    <script>(function(){
+      var inp=document.getElementById('archivo'),pr=document.getElementById('progreso'),bar=document.getElementById('pbar'),txt=document.getElementById('ptxt'),det=document.getElementById('pdet');
+      function mb(n){return (n/1048576).toFixed(0)+' MB'}
+      inp.onchange=function(){var f=inp.files[0];if(!f)return;
+        if(!window.tus){alert('No se pudo cargar el sistema de subida. Recargá la página.');return}
+        var clave='tg-subida-${ev.id}-'+f.name+'-'+f.size,guardado=null;try{guardado=JSON.parse(localStorage.getItem(clave)||'null')}catch(e){}
+        pr.hidden=false;txt.textContent='Preparando…';
+        var pedir=guardado?Promise.resolve(guardado):fetch('/panel/eventos/${ev.id}/subida',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tamano:f.size,nombre:f.name})})
+          .then(function(r){return r.json()}).then(function(d){if(d.error)throw new Error(d.error);try{localStorage.setItem(clave,JSON.stringify(d))}catch(e){}return d});
+        pedir.then(function(d){
+          var up=new tus.Upload(f,{uploadUrl:d.url,chunkSize:52428800,retryDelays:[0,3000,6000,12000,30000],
+            onProgress:function(a,t){var p=t?a/t*100:0;bar.style.width=p.toFixed(1)+'%';txt.textContent='Subiendo… '+p.toFixed(0)+'%';det.textContent=mb(a)+' de '+mb(t)},
+            onError:function(e){txt.textContent='Se cortó la subida.';det.textContent='Volvé a elegir el mismo archivo para seguir desde donde quedó.'},
+            onSuccess:function(){try{localStorage.removeItem(clave)}catch(e){}bar.style.width='100%';txt.textContent='¡Subido! Preparando el video…';
+              fetch('/panel/eventos/${ev.id}/subida/lista',{method:'POST'}).finally(function(){setTimeout(function(){location.reload()},2500)})}});
+          up.start()}).catch(function(e){txt.textContent='No se pudo iniciar la subida: '+e.message})};
+    })()</script>`;
+  pagina(res, ctx, 'Video', cuerpo, 'eventos');
+}
+
+async function subida(req, res, ctx, ev, lista) {
+  if (req.method !== 'POST') return json(res, 405, { error: 'Método no permitido' });
+  if (lista) { olvidar(ev.id); return json(res, 200, { ok: true }); }
+  const b = await leerCuerpo(req, 4096);
+  const tamano = Number(b.tamano);
+  if (!(tamano > 0) || tamano > 60 * 1024 ** 3) return json(res, 422, { error: 'Tamaño de archivo inválido (máximo 60 GB).' });
+  try {
+    const s = await cf.crearSubida(tamano, `${ctx.p.slug} · ${ev.titulo} · ${String(b.nombre || '').slice(0, 80)}`);
+    if (ev.video_uid && ev.video_uid !== s.uid) { try { await cf.borrarVideo(ev.video_uid); } catch { /* ya no existe */ } }
+    db.prepare('UPDATE eventos SET video_uid = ? WHERE id = ? AND productora_id = ?').run(s.uid, ev.id, ctx.p.id);
+    olvidar(ev.id);
+    return json(res, 200, { url: s.url, uid: s.uid });
+  } catch (e) {
+    return json(res, 502, { error: e.message });
+  }
+}
+
 async function transmision(req, res, ctx, ev, url) {
+  if (ev.tipo === 'grabado') return paginaVideo(req, res, ctx, ev, url);
   const est = await estadoEvento({ ...ev, activo: 1 }).catch((e) => ({ estado: 'error', error: e.message }));
   const key = descifrar(ev.rtmps_key);
   const pass = descifrar(ev.srt_pass);
@@ -211,6 +275,7 @@ function accesoDePrueba(req, res, ctx, ev) {
 async function borrarEvento(req, res, ctx, ev) {
   const b = await leerCuerpo(req);
   if (!b.si) return formEvento(res, ctx, ev, 'Tildá la confirmación para borrar.');
+  if (ev.video_uid) { try { await cf.borrarVideo(ev.video_uid); } catch { /* ya no existe */ } }
   if (ev.cf_uid) {
     try { await cf.borrarEntrada(ev.cf_uid); } catch (e) { if (!/404/.test(e.message)) return formEvento(res, ctx, ev, 'No se pudo borrar la señal: ' + e.message); }
   }
@@ -372,6 +437,7 @@ async function manejar(req, res, url, partes) {
       return true;
     }
     if (s3 === 'transmision') return await transmision(req, res, ctx, ev, url), true;
+    if (s3 === 'subida') return await subida(req, res, ctx, ev, partes[4] === 'lista'), true;
     if (s3 === 'prueba') return accesoDePrueba(req, res, ctx, ev), true;
     if (s3 === 'borrar' && req.method === 'POST') return await borrarEvento(req, res, ctx, ev), true;
     return redirigir(res, `/panel/eventos/${ev.id}`), true;

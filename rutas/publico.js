@@ -22,17 +22,17 @@ function servirImagen(res, dataUrl) {
 const imgEvento = (e) => (e.imagen ? `/img-evento/${e.id}?v=${e.imagen.length}` : '');
 
 function tarjetaEvento(e, mostrarProductora) {
-  const enVivo = e.fecha && new Date(e.fecha) <= new Date() ? '<span class="pill rojo">EN VIVO / HOY</span>' : '';
+  const enVivo = e.tipo === 'grabado' ? '<span class="pill cyan">VIDEO · VER CUANDO QUIERAS</span>' : e.fecha && new Date(e.fecha) <= new Date() ? '<span class="pill rojo">EN VIVO / HOY</span>' : '';
   return `<a class="ev" href="/${esc(e.slug)}/${e.id}">
     <div class="img" style="${e.imagen ? `background-image:url('${imgEvento(e)}')` : 'background:linear-gradient(135deg,#1d2029,#2a1418)'}">${enVivo}</div>
     <div class="cuerpo">${mostrarProductora ? `<span class="prod">${esc(e.productora)}</span>` : ''}
-      <h3>${esc(e.titulo)}</h3><span class="muted">${D.fechaLinda(e.fecha)}${e.lugar ? ' · ' + esc(e.lugar) : ''}</span>
+      <h3>${esc(e.titulo)}</h3><span class="muted">${e.tipo === 'grabado' ? 'Disponible para ver cuando quieras' : D.fechaLinda(e.fecha)}${e.lugar ? ' · ' + esc(e.lugar) : ''}</span>
       <span class="precio">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</span></div></a>`;
 }
 
-const listar = (where, args) => db.prepare(`SELECT e.id, e.titulo, e.fecha, e.lugar, e.precio, e.imagen, p.slug, p.nombre AS productora
+const listar = (where, args) => db.prepare(`SELECT e.id, e.titulo, e.fecha, e.lugar, e.precio, e.imagen, e.tipo, p.slug, p.nombre AS productora
     FROM eventos e JOIN productoras p ON p.id = e.productora_id
-    WHERE e.estado = 'publicado' AND p.estado <> 'suspendida' AND (e.fecha IS NULL OR e.fecha >= ?) ${where}
+    WHERE e.estado = 'publicado' AND p.estado <> 'suspendida' AND (e.fecha IS NULL OR e.fecha >= ? OR e.tipo = 'grabado') ${where}
     ORDER BY e.fecha IS NULL, e.fecha LIMIT 60`).all(new Date(Date.now() - 12 * 3600 * 1000).toISOString(), ...args);
 
 /* ------------------------------------------------------------------ PayPal (exterior) */
@@ -85,7 +85,7 @@ async function paginaEvento(req, res, p, e) {
   }
   const prueba = p.estado === 'test';
   const quedanCupo = e.cupo ? Math.max(0, Number(e.cupo) - ventas.vendidas(e.id)) : MAX_POR_COMPRA;
-  const termino = e.fecha && new Date(e.fecha).getTime() < Date.now() - 12 * 3600 * 1000;
+  const termino = e.tipo !== 'grabado' && e.fecha && new Date(e.fecha).getTime() < Date.now() - 12 * 3600 * 1000;
   let motivo = '';
   if (p.estado === 'suspendida') motivo = 'La venta de esta productora está pausada.';
   else if (e.estado === 'borrador') motivo = 'Este evento todavía es un borrador (solo lo ves vos).';
@@ -129,11 +129,11 @@ async function paginaEvento(req, res, p, e) {
   <div class="dos" style="align-items:start">
     <div>${e.imagen ? `<img src="${imgEvento(e)}" alt="" style="width:100%;border-radius:16px;display:block;margin-bottom:16px">` : ''}
       <a href="/${esc(p.slug)}" class="muted" style="text-decoration:none;font-weight:600">${esc(p.nombre)}</a>
-      <h1>${esc(e.titulo)}</h1><p class="muted" style="margin:0 0 12px">${D.fechaLinda(e.fecha)}${e.lugar ? ' · ' + esc(e.lugar) : ''}</p>
+      <h1>${esc(e.titulo)}</h1><p class="muted" style="margin:0 0 12px">${e.tipo === 'grabado' ? '<span class="pill cyan">Video grabado</span> Lo mirás cuando quieras, las veces que quieras.' : D.fechaLinda(e.fecha)}${e.lugar ? ' · ' + esc(e.lugar) : ''}</p>
       ${e.descripcion ? `<p style="white-space:pre-line">${esc(e.descripcion)}</p>` : ''}
       <div class="card" style="margin-top:14px"><b>Cómo funciona</b><ol class="muted" style="margin:8px 0 0;padding-left:20px">
         <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta)${Number(e.precio_usd) > 0 ? ', o con PayPal si estás en el exterior' : ''}.</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
-        <li>El día del evento lo abrís y mirás. Cada entrada funciona en una pantalla a la vez.</li></ol></div></div>
+        <li>${e.tipo === 'grabado' ? 'Abrís el link y lo mirás cuando quieras' : 'El día del evento lo abrís y mirás'}. Cada entrada funciona en una pantalla a la vez.</li></ol></div></div>
     <div class="card" style="position:sticky;top:80px">
       <span class="muted">Entrada</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</div>
       ${Number(e.precio_usd) > 0 ? `<div class="muted" style="margin-top:2px">Desde el exterior: <b style="color:#fff">USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))}</b> con PayPal</div>` : ''}

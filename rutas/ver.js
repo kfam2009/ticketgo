@@ -32,7 +32,7 @@ function eventoDe(a) {
 
 async function fuentes(ev, est) {
   if (est.estado === 'vivo') return [{ id: ev.cf_uid, url: await cf.urlHls(ev.cf_uid, 6) }];
-  if (est.estado === 'repeticion') return Promise.all(est.partes.map(async (p) => ({ id: p.uid, url: await cf.urlHls(p.uid, 6) })));
+  if (est.estado === 'repeticion' || est.estado === 'grabado') return Promise.all(est.partes.map(async (p) => ({ id: p.uid, url: await cf.urlHls(p.uid, 6) })));
   return [];
 }
 
