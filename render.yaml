@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: ticketgo
+    runtime: docker
+    plan: starter
+    healthCheckPath: /salud
+    disk:
+      name: datos
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: BRAND_NAME
+        value: TicketGo
+      - key: ADMIN_EMAIL
+        value: livegobahia@gmail.com
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
+      - key: COMISION_PCT
+        value: "8"
+      - key: COMISION_FIJA
+        value: "0"
+      - key: CONTACTO_WHATSAPP
+        value: "5492914254860"
+      - key: CF_ACCOUNT_ID
+        sync: false
+      - key: CF_API_TOKEN
+        sync: false
+      - key: CF_CUSTOMER_CODE
+        sync: false
+      - key: MP_ACCESS_TOKEN
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        value: livegobahia@gmail.com
+      - key: MAIL_FROM_NAME
+        value: TicketGo
+      - key: BASE_URL
+        sync: false

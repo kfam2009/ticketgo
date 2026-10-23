@@ -1,0 +1,9 @@
+{
+  "name": "ticketgo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TicketGo: entradas para transmisiones en vivo, multi-productora",
+  "main": "server.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": { "start": "node --disable-warning=ExperimentalWarning server.js" }
+}
