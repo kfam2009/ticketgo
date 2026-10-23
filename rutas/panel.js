@@ -22,7 +22,7 @@ function pagina(res, ctx, titulo, cuerpo, activo, codigo = 200) {
 }
 
 /* ------------------------------------------------------------------ inicio */
-function inicio(req, res, ctx, url) {
+async function inicio(req, res, ctx, url) {
   const { p } = ctx;
   const r = db.prepare(`SELECT
       (SELECT COUNT(*) FROM eventos WHERE productora_id = ? AND (fecha IS NULL OR fecha >= ?)) AS proximos,
@@ -35,23 +35,51 @@ function inicio(req, res, ctx, url) {
   const test = p.estado === 'test' ? `<div class="modotest">Estás en <b>modo test</b>: podés crear eventos, transmitir y hacer compras de prueba sin cobrar.
     Cuando quieras vender de verdad, <a href="https://wa.me/${esc(config.whatsapp)}?text=${encodeURIComponent(`Hola! Quiero activar mi productora ${p.nombre} en ${config.marca}`)}" target="_blank" rel="noopener" style="color:#fff">comunicate con ${esc(config.marca)} para activar tu perfil</a>.</div>` : '';
   const susp = p.estado === 'suspendida' ? '<div class="error">Tu productora está suspendida: la venta está pausada. Comunicate con nosotros.</div>' : '';
+  const prox = db.prepare(`SELECT e.*, (SELECT COALESCE(SUM(cantidad),0) FROM ordenes o WHERE o.evento_id = e.id AND o.estado = 'aprobado') AS vendidas
+      FROM eventos e WHERE e.productora_id = ? AND (e.fecha IS NULL OR e.fecha >= ?) ORDER BY e.fecha IS NULL, e.fecha LIMIT 1`).get(p.id, new Date(Date.now() - 12 * 3600e3).toISOString());
+  const cuentas = db.prepare(`SELECT COUNT(*) AS evs, COUNT(CASE WHEN estado = 'publicado' THEN 1 END) AS pub,
+      (SELECT COUNT(*) FROM accesos a JOIN eventos e2 ON e2.id = a.evento_id WHERE e2.productora_id = ? AND a.primera_vista IS NOT NULL) AS vistas
+      FROM eventos WHERE productora_id = ?`).get(p.id, p.id);
+  const pasos = [
+    [!!p.logo, 'Subí el logo de tu productora', '/panel/perfil', 'Mi página'],
+    [cuentas.evs > 0, 'Creá tu primer evento', '/panel/eventos/nuevo', 'Crear'],
+    [cuentas.pub > 0, 'Publicalo para que aparezca en tu página', '/panel/eventos', 'Eventos'],
+    [cuentas.vistas > 0, 'Probá la transmisión desde vMix u OBS', prox ? `/panel/eventos/${prox.id}/transmision` : '/panel/eventos', 'Probar'],
+    [p.estado === 'activa', 'Pedí la activación para vender de verdad', `https://wa.me/${config.whatsapp}?text=${encodeURIComponent(`Hola! Quiero activar mi productora ${p.nombre} en ${config.marca}`)}`, 'Pedir'],
+  ];
+  const hechos = pasos.filter((x) => x[0]).length;
+  const listaPasos = hechos < pasos.length ? `<div class="card" style="margin-bottom:18px"><div class="fila" style="justify-content:space-between"><h3>Primeros pasos</h3><small>${hechos} de ${pasos.length}</small></div>
+    <div class="barrita"><i style="width:${Math.round(hechos / pasos.length * 100)}%"></i></div>
+    <ol class="pasos">${pasos.map(([ok, t, h, b], i) => `<li class="${ok ? 'hecho' : ''}"><span class="n">${ok ? '✓' : i + 1}</span><span>${esc(t)}</span>${ok ? '' : `<a class="btn sec chico" href="${esc(h)}" ${h.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${b}</a>`}</li>`).join('')}</ol></div>` : '';
+  let destacado = '';
+  if (prox) {
+    const est = await estadoEvento({ ...prox, activo: 1 }).catch(() => ({ estado: 'error' }));
+    destacado = `<h2 style="margin-top:0">Próximo evento</h2><div class="card destacado" style="margin-bottom:18px">
+      <div class="img" style="${prox.imagen ? `background-image:url('/img-evento/${prox.id}?v=${prox.imagen.length}')` : 'background:linear-gradient(135deg,#1d2029,#2a1418)'}"></div>
+      <div><div class="fila" style="gap:6px;margin-bottom:6px">${pillSeñal(est.estado)} ${pillEv(prox.estado)}</div>
+        <h3 style="font-size:26px">${esc(prox.titulo)}</h3><p class="muted" style="margin:2px 0 12px">${D.fechaLinda(prox.fecha) || 'Sin fecha'} · ${prox.vendidas}${prox.cupo ? ' / ' + prox.cupo : ''} entradas vendidas</p>
+        <div class="fila"><a class="btn" href="/panel/eventos/${prox.id}/transmision">Transmitir</a><a class="btn sec" href="/panel/ventas?evento=${prox.id}">Ventas</a>
+        <a class="btn sec" href="/panel/eventos/${prox.id}">Editar</a><code id="lk" hidden>${esc(baseUrl(req))}/${esc(p.slug)}/${prox.id}</code><button class="btn sec" data-copiar="lk">Copiar link</button></div></div></div>`;
+  }
   const cuerpo = `${bienvenida}${test}${susp}
-    <p class="muted" style="margin:0;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px">Centro de gestión</p>
-    <h1>${esc(p.nombre)}</h1>
-    <p class="sub">Tu página: <a href="/${esc(p.slug)}" target="_blank">${esc(baseUrl(req))}/${esc(p.slug)}</a></p>
+    <div class="fila" style="justify-content:space-between;align-items:flex-end;margin-bottom:16px"><div>
+      <h1>Hola, ${esc(p.nombre)}</h1><span class="muted">Tu página: <a href="/${esc(p.slug)}" target="_blank">${esc(baseUrl(req))}/${esc(p.slug)}</a></span></div>
+      <a class="btn" href="/panel/eventos/nuevo">+ Nuevo evento</a></div>
     <div class="kpis">
       <div class="kpi c"><b>${r.proximos}</b><span>Eventos próximos</span></div>
       <div class="kpi g"><b>${r.entradas}</b><span>Entradas vendidas</span></div>
       <div class="kpi w"><b>${D.plata(r.neto)}</b><span>Recaudado (neto)</span></div>
       <div class="kpi r"><b>${mirando}</b><span>Mirando ahora</span></div>
     </div>
-    <div class="acciones">
-      ${accion('a1', '/panel/eventos/nuevo', 'mas', 'Crear evento', 'Publicá un nuevo evento en minutos')}
-      ${accion('a3', '/panel/eventos', 'cal', 'Gestionar eventos', 'Fechas, precios, visibilidad y transmisión')}
-      ${accion('a2', '/panel/ventas', 'billete', 'Ventas', 'Compras, accesos y reenvíos')}
-      ${accion('a6', '/panel/metricas', 'grafico', 'Métricas', 'Ventas, asistencia y rendimiento')}
-      ${accion('a5', '/panel/perfil', 'perfil', 'Mi página', 'Logo, datos y redes de tu productora')}
-      ${accion('a4', '/panel/mercadopago', 'wallet', 'Asociar Mercado Pago', 'Cobrá tus ventas directo en tu cuenta', true)}
+    ${listaPasos}${destacado}
+    <h2 style="margin-top:0">Accesos rápidos</h2>
+    <div class="mosaicos">
+      ${accion('r', '/panel/eventos/nuevo', 'mas', 'Nuevo evento', 'Cargalo y publicalo')}
+      ${accion('c', '/panel/eventos', 'cal', 'Mis eventos', 'Fechas, precios y transmisión')}
+      ${accion('g', '/panel/ventas', 'billete', 'Ventas', 'Compras y reenvíos')}
+      ${accion('c', '/panel/metricas', 'grafico', 'Métricas', 'Cómo te fue')}
+      ${accion('r', '/panel/perfil', 'perfil', 'Mi página', 'Logo y datos')}
+      ${accion('w', '/panel/mercadopago', 'wallet', 'Mercado Pago', 'Cobrá en tu cuenta', true)}
     </div>`;
   pagina(res, ctx, 'Inicio', cuerpo, 'inicio');
 }
@@ -313,7 +341,7 @@ async function manejar(req, res, url, partes) {
   if (!p) return redirigir(res, '/salir'), true;
   const ctx = { u, p };
   const [, s1, s2, s3] = partes;
-  if (!s1) return inicio(req, res, ctx, url), true;
+  if (!s1) return await inicio(req, res, ctx, url), true;
   if (s1 === 'eventos') {
     if (!s2) return await listaEventos(req, res, ctx), true;
     if (s2 === 'nuevo') return (req.method === 'POST' ? await guardarEvento(req, res, ctx, null) : formEvento(res, ctx, null)), true;
