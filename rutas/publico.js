@@ -5,6 +5,7 @@ const { db } = require('../lib/db');
 const { esc, firmar } = require('../lib/util');
 const { enviar, json, redirigir, leerCuerpo, baseUrl, ipDe, limite } = require('../lib/http');
 const { publico, suelta } = require('../lib/vistas');
+const { intro } = require('../lib/logo-animado');
 const { mensaje } = require('../lib/reproductor');
 const auth = require('../lib/auth');
 const ventas = require('../lib/ventas');
@@ -37,8 +38,8 @@ const listar = (where, args) => db.prepare(`SELECT e.id, e.titulo, e.fecha, e.lu
 /* ------------------------------------------------------------------ portada */
 function portada(req, res) {
   const evs = listar("AND p.estado = 'activa'", []);
-  const cuerpo = `<section class="hero"><span class="tag">Entradas para transmisiones en vivo</span>
-    <h1>Mirá en vivo los eventos<br>que te importan.</h1>
+  const cuerpo = `${intro('<span class="vivo"><i></i>En vivo</span> · Entradas <b>·</b> Transmisiones')}
+    <section class="hero" style="padding-top:18px"><h1>Mirá en vivo los eventos<br>que te importan.</h1>
     <p class="sub" style="max-width:620px">Comprá tu entrada con Mercado Pago y recibí tu acceso al instante. Lo ves desde el celular, la compu o la tele.</p></section>
     <h2>Próximos eventos</h2>
     ${evs.length ? `<div class="grid">${evs.map((e) => tarjetaEvento(e, true)).join('')}</div>` : '<div class="card muted">Pronto vas a ver acá los próximos eventos.</div>'}
