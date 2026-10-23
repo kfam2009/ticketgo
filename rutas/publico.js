@@ -38,17 +38,11 @@ const listar = (where, args) => db.prepare(`SELECT e.id, e.titulo, e.fecha, e.lu
 /* ------------------------------------------------------------------ PayPal (exterior) */
 /** Botón de PayPal. Hasta que se conecte la cuenta, el pedido se hace por WhatsApp con un link de pago. */
 function paypalBloque(p, e) {
-  const wa = String(p.whatsapp || config.whatsapp).replace(/\D/g, '');
-  const texto = `Hola! Quiero comprar desde el exterior con PayPal una entrada para "${e.titulo}" (USD ${e.precio_usd}).`;
   return `<div class="pp">
     <div class="pp-sep"><span>¿Estás fuera de Argentina?</span></div>
-    <button type="button" class="pp-btn" onclick="document.getElementById('ppinfo').hidden=false;this.hidden=true">Pagar con <b>Pay</b><i>Pal</i></button>
-    <div id="ppinfo" hidden class="pp-info">
-      <b>Compra con PayPal — USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))}</b>
-      <p>Escribinos y te mandamos el link de pago de PayPal. Apenas se acredite, te llega tu acceso por mail, igual que una compra con Mercado Pago.</p>
-      <a class="btn ancho" style="background:#25d366;color:#05210f" href="https://wa.me/${esc(wa)}?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">Pedir link de PayPal por WhatsApp</a>
-    </div>
-    <small class="muted" style="display:block;text-align:center;margin-top:8px">Tarjetas internacionales y saldo PayPal · precio en dólares</small></div>`;
+    <button type="button" class="pp-btn" onclick="document.getElementById('ppinfo').hidden=false">Pagar con <b>Pay</b><i>Pal</i></button>
+    <p id="ppinfo" hidden class="muted" style="text-align:center;font-size:13px;margin:8px 0 0">El pago con PayPal va a estar disponible muy pronto.</p>
+    <small class="muted" style="display:block;text-align:center;margin-top:8px">USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))} · tarjetas internacionales y saldo PayPal</small></div>`;
 }
 
 /* ------------------------------------------------------------------ portada */

@@ -403,8 +403,8 @@ function paypal(req, res, ctx) {
       <div class="card"><h3>Cómo funciona</h3><ol class="muted" style="padding-left:20px;margin:8px 0 0">
         <li>En cada evento cargás un <b style="color:#fff">precio en dólares</b>.</li>
         <li>En la página del evento aparece el botón amarillo <b style="color:#fff">Pagar con PayPal</b> para los que están fuera de Argentina.</li>
-        <li>${config.paypalListo() ? 'El comprador paga con PayPal y recibe su acceso al instante, como con Mercado Pago.' : 'Por ahora el comprador te pide el link de pago por <b style="color:#fff">WhatsApp</b> (con el evento y el precio ya escritos). Muy pronto el cobro va a ser automático.'}</li></ol></div>
-      <div class="card"><h3>Estado</h3>${config.paypalListo() ? '<p><span class="pill verde">PayPal conectado</span></p>' : `<p><span class="pill amarillo">Pedido por WhatsApp</span></p><p class="muted" style="margin:0">Los pedidos te llegan al WhatsApp de tu productora${ctx.p.whatsapp ? ` (${esc(ctx.p.whatsapp)})` : ': cargalo en <a href="/panel/perfil">Mi página</a>'}.</p>`}</div>
+        <li>${config.paypalListo() ? 'El comprador paga con PayPal y recibe su acceso al instante, como con Mercado Pago.' : 'El botón ya se muestra en tus eventos. El cobro con PayPal se habilita muy pronto.'}</li></ol></div>
+      <div class="card"><h3>Estado</h3>${config.paypalListo() ? '<p><span class="pill verde">PayPal conectado</span></p>' : '<p><span class="pill amarillo">Próximamente</span></p><p class="muted" style="margin:0">Cargá el precio en dólares en tus eventos y el botón queda visible para los compradores del exterior.</p>'}</div>
     </div>
     <h2>Tus próximos eventos</h2><div class="card tabla">${evs.length ? `<table><thead><tr><th>Evento</th><th>Precio en pesos</th><th>PayPal</th><th></th></tr></thead><tbody>${filas}</tbody></table>` : '<p class="muted" style="margin:0">No tenés eventos próximos.</p>'}</div>`;
   pagina(res, ctx, 'PayPal', cuerpo, 'inicio');
