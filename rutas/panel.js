@@ -115,6 +115,7 @@ function formEvento(res, ctx, ev, err = '') {
         <label>Lugar (opcional)</label><input name="lugar" maxlength="120" value="${esc(v.lugar || '')}" placeholder="Ej: Club Estrella, Bahía Blanca">
         <div class="dos"><div><label>Precio por entrada ($)</label><input type="number" name="precio" min="0" step="1" value="${esc(v.precio != null ? v.precio : '')}" placeholder="0 = gratis"></div>
           <div><label>Cupo (vacío = sin límite)</label><input type="number" name="cupo" min="1" value="${esc(v.cupo || '')}"></div></div>
+        <label>Precio en dólares para compras desde el exterior (PayPal, opcional)</label><input type="number" name="precio_usd" min="0" step="0.5" value="${esc(v.precio_usd || '')}" placeholder="Vacío = no se ofrece PayPal">
         <label>Descripción</label><textarea name="descripcion" maxlength="3000">${esc(v.descripcion || '')}</textarea>
       </div><div>
         <label>Imagen (se ve en la cartelera, ideal 16:9)</label>
@@ -143,6 +144,7 @@ async function guardarEvento(req, res, ctx, ev) {
     lugar: String(b.lugar || '').trim().slice(0, 120),
     fecha: D.fechaDeInput(b.fecha),
     precio: Math.max(0, Math.round(Number(b.precio) || 0)),
+    precio_usd: Number(b.precio_usd) > 0 ? Math.round(Number(b.precio_usd) * 100) / 100 : null,
     cupo: parseInt(b.cupo, 10) > 0 ? parseInt(b.cupo, 10) : null,
     estado: ESTADOS_EV[b.estado] ? b.estado : 'borrador',
     venta_activa: b.venta_activa ? 1 : 0,

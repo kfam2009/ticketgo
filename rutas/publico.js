@@ -35,12 +35,28 @@ const listar = (where, args) => db.prepare(`SELECT e.id, e.titulo, e.fecha, e.lu
     WHERE e.estado = 'publicado' AND p.estado <> 'suspendida' AND (e.fecha IS NULL OR e.fecha >= ?) ${where}
     ORDER BY e.fecha IS NULL, e.fecha LIMIT 60`).all(new Date(Date.now() - 12 * 3600 * 1000).toISOString(), ...args);
 
+/* ------------------------------------------------------------------ PayPal (exterior) */
+/** Botón de PayPal. Hasta que se conecte la cuenta, el pedido se hace por WhatsApp con un link de pago. */
+function paypalBloque(p, e) {
+  const wa = String(p.whatsapp || config.whatsapp).replace(/\D/g, '');
+  const texto = `Hola! Quiero comprar desde el exterior con PayPal una entrada para "${e.titulo}" (USD ${e.precio_usd}).`;
+  return `<div class="pp">
+    <div class="pp-sep"><span>¿Estás fuera de Argentina?</span></div>
+    <button type="button" class="pp-btn" onclick="document.getElementById('ppinfo').hidden=false;this.hidden=true">Pagar con <b>Pay</b><i>Pal</i></button>
+    <div id="ppinfo" hidden class="pp-info">
+      <b>Compra con PayPal — USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))}</b>
+      <p>Escribinos y te mandamos el link de pago de PayPal. Apenas se acredite, te llega tu acceso por mail, igual que una compra con Mercado Pago.</p>
+      <a class="btn ancho" style="background:#25d366;color:#05210f" href="https://wa.me/${esc(wa)}?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">Pedir link de PayPal por WhatsApp</a>
+    </div>
+    <small class="muted" style="display:block;text-align:center;margin-top:8px">Tarjetas internacionales y saldo PayPal · precio en dólares</small></div>`;
+}
+
 /* ------------------------------------------------------------------ portada */
 function portada(req, res) {
   const evs = listar("AND p.estado = 'activa'", []);
   const cuerpo = `${intro('<span class="vivo"><i></i>En vivo</span> · Entradas <b>·</b> Transmisiones')}
     <section class="hero" style="padding-top:18px"><h1>Mirá en vivo los eventos<br>que te importan.</h1>
-    <p class="sub" style="max-width:620px">Comprá tu entrada con Mercado Pago y recibí tu acceso al instante. Lo ves desde el celular, la compu o la tele.</p></section>
+    <p class="sub" style="max-width:620px">Comprá tu entrada con Mercado Pago —o con PayPal si estás en el exterior— y recibí tu acceso al instante. Lo ves desde el celular, la compu o la tele.</p></section>
     <h2>Próximos eventos</h2>
     ${evs.length ? `<div class="grid">${evs.map((e) => tarjetaEvento(e, true)).join('')}</div>` : '<div class="card muted">Pronto vas a ver acá los próximos eventos.</div>'}
     <div class="card" style="margin-top:34px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;justify-content:space-between;border-color:rgba(76,201,240,.35)">
@@ -116,10 +132,11 @@ async function paginaEvento(req, res, p, e) {
       <h1>${esc(e.titulo)}</h1><p class="muted" style="margin:0 0 12px">${D.fechaLinda(e.fecha)}${e.lugar ? ' · ' + esc(e.lugar) : ''}</p>
       ${e.descripcion ? `<p style="white-space:pre-line">${esc(e.descripcion)}</p>` : ''}
       <div class="card" style="margin-top:14px"><b>Cómo funciona</b><ol class="muted" style="margin:8px 0 0;padding-left:20px">
-        <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta).</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
+        <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta)${Number(e.precio_usd) > 0 ? ', o con PayPal si estás en el exterior' : ''}.</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
         <li>El día del evento lo abrís y mirás. Cada entrada funciona en una pantalla a la vez.</li></ol></div></div>
     <div class="card" style="position:sticky;top:80px">
       <span class="muted">Entrada</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</div>
+      ${Number(e.precio_usd) > 0 ? `<div class="muted" style="margin-top:2px">Desde el exterior: <b style="color:#fff">USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))}</b> con PayPal</div>` : ''}
       ${e.cupo && quedanCupo <= 20 && quedanCupo > 0 ? `<p class="pill amarillo">Quedan ${quedanCupo}</p>` : ''}
       ${motivo ? `<div class="aviso" style="margin-top:12px">${esc(motivo)}</div>` : `
       ${errores.length ? `<div class="error">${errores.map(esc).join('<br>')}</div>` : ''}
@@ -129,7 +146,8 @@ async function paginaEvento(req, res, p, e) {
         <label>Nombre (opcional)</label><input name="nombre" maxlength="120" value="${esc(d.nombre || '')}" autocomplete="name">
         <label>WhatsApp (opcional)</label><input name="telefono" maxlength="30" value="${esc(d.telefono || '')}" inputmode="tel">
         <button class="btn ancho" style="margin-top:18px">${prueba ? 'Hacer compra de prueba' : Number(e.precio) > 0 ? 'Pagar con Mercado Pago' : 'Obtener acceso gratis'}</button>
-      </form>`}
+      </form>
+      ${Number(e.precio_usd) > 0 ? paypalBloque(p, e) : ''}`}
     </div></div>`;
   enviar(res, errores.length ? 422 : 200, publico({ titulo: e.titulo, cuerpo, productora: p, descripcion: `${e.titulo} — ${p.nombre}` }));
 }
