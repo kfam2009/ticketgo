@@ -80,6 +80,7 @@ async function inicio(req, res, ctx, url) {
       ${accion('c', '/panel/metricas', 'grafico', 'Métricas', 'Cómo te fue')}
       ${accion('r', '/panel/perfil', 'perfil', 'Mi página', 'Logo y datos')}
       ${accion('w', '/panel/mercadopago', 'wallet', 'Mercado Pago', 'Cobrá en tu cuenta', true)}
+      ${accion('c', '/panel/paypal', 'mundo', 'PayPal', 'Vendé al exterior en dólares')}
     </div>`;
   pagina(res, ctx, 'Inicio', cuerpo, 'inicio');
 }
@@ -328,6 +329,22 @@ async function perfil(req, res, ctx) {
   pagina(res, ctx, 'Mi página', cuerpo, 'perfil');
 }
 
+function paypal(req, res, ctx) {
+  const evs = db.prepare('SELECT id, titulo, fecha, precio, precio_usd FROM eventos WHERE productora_id = ? AND (fecha IS NULL OR fecha >= ?) ORDER BY fecha').all(ctx.p.id, new Date(Date.now() - 12 * 3600e3).toISOString());
+  const filas = evs.map((e) => `<tr><td><b>${esc(e.titulo)}</b><br><small>${D.fechaLinda(e.fecha, true) || 'Sin fecha'}</small></td><td>${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</td>
+    <td>${Number(e.precio_usd) > 0 ? `<span class="pill cyan">USD ${esc(e.precio_usd)}</span>` : '<span class="muted">No ofrece PayPal</span>'}</td><td><a class="btn sec chico" href="/panel/eventos/${e.id}">${Number(e.precio_usd) > 0 ? 'Cambiar' : 'Agregar precio USD'}</a></td></tr>`).join('');
+  const cuerpo = `<h1>PayPal · ventas al exterior</h1><p class="sub">Para que te compren desde otros países, en dólares, con tarjeta internacional o saldo PayPal.</p>
+    <div class="dos" style="align-items:start">
+      <div class="card"><h3>Cómo funciona</h3><ol class="muted" style="padding-left:20px;margin:8px 0 0">
+        <li>En cada evento cargás un <b style="color:#fff">precio en dólares</b>.</li>
+        <li>En la página del evento aparece el botón amarillo <b style="color:#fff">Pagar con PayPal</b> para los que están fuera de Argentina.</li>
+        <li>${config.paypalListo() ? 'El comprador paga con PayPal y recibe su acceso al instante, como con Mercado Pago.' : 'Por ahora el comprador te pide el link de pago por <b style="color:#fff">WhatsApp</b> (con el evento y el precio ya escritos). Muy pronto el cobro va a ser automático.'}</li></ol></div>
+      <div class="card"><h3>Estado</h3>${config.paypalListo() ? '<p><span class="pill verde">PayPal conectado</span></p>' : `<p><span class="pill amarillo">Pedido por WhatsApp</span></p><p class="muted" style="margin:0">Los pedidos te llegan al WhatsApp de tu productora${ctx.p.whatsapp ? ` (${esc(ctx.p.whatsapp)})` : ': cargalo en <a href="/panel/perfil">Mi página</a>'}.</p>`}</div>
+    </div>
+    <h2>Tus próximos eventos</h2><div class="card tabla">${evs.length ? `<table><thead><tr><th>Evento</th><th>Precio en pesos</th><th>PayPal</th><th></th></tr></thead><tbody>${filas}</tbody></table>` : '<p class="muted" style="margin:0">No tenés eventos próximos.</p>'}</div>`;
+  pagina(res, ctx, 'PayPal', cuerpo, 'inicio');
+}
+
 function pronto(res, ctx, titulo, texto) {
   pagina(res, ctx, titulo, `<h1>${esc(titulo)}</h1><div class="card"><span class="pill cyan">PRÓXIMAMENTE</span><p>${texto}</p>
     <a class="btn sec" href="/panel">Volver</a></div>`, 'inicio');
@@ -362,6 +379,7 @@ async function manejar(req, res, url, partes) {
   if (s1 === 'ventas') return await ventasLista(req, res, ctx, url), true;
   if (s1 === 'metricas') return metricas(req, res, ctx), true;
   if (s1 === 'perfil') return await perfil(req, res, ctx), true;
+  if (s1 === 'paypal') return paypal(req, res, ctx), true;
   if (s1 === 'mercadopago') return pronto(res, ctx, 'Asociar Mercado Pago', 'Muy pronto vas a poder conectar tu cuenta de Mercado Pago con un botón para que cada venta entre directo a tu cuenta. Mientras tanto, las ventas se cobran a través de la plataforma y te liquidamos lo recaudado.'), true;
   return redirigir(res, '/panel'), true;
 }
