@@ -179,58 +179,140 @@ async function guardarEvento(req, res, ctx, ev) {
   return redirigir(res, `/panel/eventos/${ev.id}?ok=1`);
 }
 
-/* ------------------------------------------------------------------ video grabado */
-async function paginaVideo(req, res, ctx, ev, url) {
-  const est = await estadoEvento({ ...ev, activo: 1 }).catch((e) => ({ estado: 'error', error: e.message }));
+/* ------------------------------------------------------------------ video grabado (partes / capítulos) */
+const aSeg = (t) => {
+  const p = String(t || '').trim().split(':').map((x) => parseInt(x, 10));
+  if (!p.length || p.some((x) => !Number.isFinite(x) || x < 0)) return null;
+  return p.reduce((a, x) => a * 60 + x, 0);
+};
+const aTiempo = (s) => { s = Number(s) || 0; const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const partesDe = (evId) => db.prepare('SELECT * FROM partes WHERE evento_id = ? ORDER BY orden, id').all(evId);
+function renumerar(evId) { partesDe(evId).forEach((p, i) => db.prepare('UPDATE partes SET orden = ? WHERE id = ?').run(i + 1, p.id)); }
+
+async function paginaVideo(req, res, ctx, ev, url, aviso = '') {
+  const est = await estadoEvento({ ...ev, activo: 1 }).catch((e) => ({ estado: 'error', error: e.message, videos: {} }));
+  const vids = est.videos || {};
+  const partes = partesDe(ev.id);
+  const videosSubidos = [...new Map(partes.filter((p) => p.uid).map((p) => [p.uid, p])).values()];
+  const estadoVid = (p) => {
+    if (!p.uid) return '<span class="pill amarillo">Sin video</span>';
+    const v = vids[p.uid];
+    if (!v) return '<span class="pill">…</span>';
+    if (v.listo) return `<span class="pill verde">Listo${v.duracion ? ' · ' + aTiempo(Math.round(v.duracion)) : ''}</span>`;
+    if (v.estado === 'error') return '<span class="pill rojo">Error</span>';
+    if (v.estado === 'pendingupload') return '<span class="pill amarillo">Subida incompleta</span>';
+    return `<span class="pill amarillo">Procesando${v.progreso ? ' ' + Math.round(v.progreso) + '%' : ''}</span>`;
+  };
+  const filas = partes.map((p, i) => `<tr>
+    <td style="width:34px"><b>${i + 1}</b></td>
+    <td><form method="post" class="fila" style="flex-wrap:nowrap"><input type="hidden" name="accion" value="renombrar"><input type="hidden" name="pid" value="${p.id}">
+      <input name="titulo" value="${esc(p.titulo)}" maxlength="80" style="min-width:140px"><button class="btn sec chico">Guardar</button></form>
+      ${p.inicio != null && p.inicio !== '' ? `<small>Capítulo: empieza en <b>${aTiempo(p.inicio)}</b></small>` : ''}</td>
+    <td>${estadoVid(p)}<div id="prog${p.id}" class="muted" style="font-size:12px;margin-top:4px"></div>
+      ${p.inicio == null ? `<label class="btn sec chico" style="margin:6px 0 0;color:#fff">${p.uid ? 'Reemplazar video' : 'Subir video'}<input type="file" data-parte="${p.id}" accept="video/*,.mp4,.mov,.mkv,.webm" hidden></label>` : ''}</td>
+    <td><form method="post" class="fila"><input type="hidden" name="pid" value="${p.id}">
+      <button class="btn sec chico" name="accion" value="subir" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
+      <button class="btn sec chico" name="accion" value="bajar" ${i === partes.length - 1 ? 'disabled' : ''} title="Bajar">↓</button>
+      <button class="btn peligro chico" name="accion" value="borrar" title="Borrar">✕</button></form></td></tr>`).join('');
   const cuerpo = `<p><a href="/panel/eventos">← Eventos</a></p>
     <div class="fila" style="justify-content:space-between"><div><h1>${esc(ev.titulo)}</h1><p class="sub"><span class="pill cyan">Video grabado</span> ${pillSeñal(est.estado)}</p></div>
     <div class="fila">${est.estado === 'grabado' ? `<a class="btn" href="/panel/eventos/${ev.id}/prueba" target="_blank" rel="noopener">Ver como comprador</a>` : ''}<a class="btn sec" href="/panel/eventos/${ev.id}">Editar</a></div></div>
-    ${url.searchParams.get('nuevo') ? `<div class="ok">Evento creado${ev.estado === 'borrador' ? ' como <b>borrador</b>' : ''}. Ahora subí el video.</div>` : ''}
+    ${url.searchParams.get('nuevo') ? `<div class="ok">Evento creado${ev.estado === 'borrador' ? ' como <b>borrador</b>' : ''}. Ahora agregá las partes y subí los videos.</div>` : ''}${aviso}
     ${!config.cloudflareListo() ? '<div class="aviso">La plataforma todavía no tiene configurado el servicio de video.</div>' : ''}
-    <h2>Video</h2>
-    <div class="card" id="zona">
-      ${est.estado === 'grabado' ? `<p style="margin-top:0"><b>El video está listo.</b>${est.partes[0] && est.partes[0].duracion ? ` Duración: ${Math.round(est.partes[0].duracion / 60)} minutos.` : ''} Podés reemplazarlo subiendo otro.</p>`
-        : est.estado === 'procesando' ? `<p style="margin-top:0"><b>Preparando el video${est.progreso ? ` (${Math.round(est.progreso)}%)` : ''}…</b> Puede tardar unos minutos según la duración. Esta página se actualiza sola.</p><script>setTimeout(function(){location.reload()},20000)</script>`
-        : '<p style="margin-top:0">Todavía no subiste el video.</p>'}
-      <label for="archivo" class="btn ${est.estado === 'grabado' ? 'sec' : ''}" style="color:#fff;margin:6px 0 0;display:inline-flex">${ev.video_uid ? 'Subir otro video' : 'Elegir video'}</label>
-      <input type="file" id="archivo" accept="video/*,.mp4,.mov,.mkv,.avi,.webm" hidden>
-      <div id="progreso" hidden style="margin-top:14px"><div class="barrita" style="height:10px"><i id="pbar" style="width:0%"></i></div><b id="ptxt">Subiendo…</b> <small id="pdet"></small>
-        <p class="muted" style="font-size:13px;margin:8px 0 0">No cierres esta página mientras sube. Si se corta, volvé a elegir el mismo archivo y sigue desde donde quedó.</p></div>
-      <p class="muted" style="font-size:13px;margin-bottom:0">Formatos: MP4 (recomendado), MOV, MKV. Hasta 6 horas de duración. Archivos grandes (varios GB) sin problema.</p>
+    ${est.estado === 'procesando' ? '<script>setTimeout(function(){if(!window.subiendo)location.reload()},20000)</script>' : ''}
+    <h2>Partes del curso / video</h2>
+    <p class="muted" style="margin-top:-6px">El comprador ve un botón por cada parte y elige cuál mirar. Si hay una sola, se reproduce directo.</p>
+    <div class="card tabla">${partes.length ? `<table><thead><tr><th>#</th><th>Título</th><th>Video</th><th>Orden</th></tr></thead><tbody>${filas}</tbody></table>`
+      : '<p class="muted" style="margin:0">Todavía no hay partes. Agregá la primera abajo.</p>'}</div>
+    <div class="dos" style="margin-top:14px;align-items:start">
+      <form method="post" class="card"><h3>+ Agregar parte</h3><p class="muted" style="margin:4px 0 0;font-size:14px">Una parte = un archivo de video (ej. "Clase 1"). Después la subís desde la tabla.</p>
+        <input type="hidden" name="accion" value="nueva"><label>Título</label><input name="titulo" maxlength="80" placeholder="Clase ${partes.length + 1}">
+        <button class="btn" style="margin-top:12px">Agregar parte</button></form>
+      <form method="post" class="card"><h3>+ Agregar capítulo</h3><p class="muted" style="margin:4px 0 0;font-size:14px">Si subiste un solo video largo, marcá dónde empieza cada parte. No ocupa espacio extra.</p>
+        <input type="hidden" name="accion" value="capitulo">
+        ${videosSubidos.length ? `<label>Video</label><select name="uid">${videosSubidos.map((p) => `<option value="${esc(p.uid)}">${esc(p.titulo)}</option>`).join('')}</select>
+        <div class="dos"><div><label>Título</label><input name="titulo" maxlength="80" placeholder="Clase 2"></div><div><label>Empieza en (h:mm:ss o mm:ss)</label><input name="inicio" placeholder="42:10" required></div></div>
+        <button class="btn sec" style="margin-top:12px">Agregar capítulo</button>` : '<p class="muted">Primero subí al menos un video.</p>'}</form>
     </div>
+    <p class="muted" style="font-size:13px">Formatos: MP4 (recomendado), MOV, MKV. Hasta 6 horas por video. Archivos de varios GB sin problema: si se corta, volvé a elegir el mismo archivo y sigue desde donde quedó. No cierres la página mientras sube.</p>
     <h2>Link para compartir</h2>
     <div class="card"><div class="dato"><code id="d4">${esc(baseUrl(req))}/${esc(ctx.p.slug)}/${ev.id}</code><button class="btn sec chico" data-copiar="d4">Copiar</button></div></div>
     <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
     <script>(function(){
-      var inp=document.getElementById('archivo'),pr=document.getElementById('progreso'),bar=document.getElementById('pbar'),txt=document.getElementById('ptxt'),det=document.getElementById('pdet');
       function mb(n){return (n/1048576).toFixed(0)+' MB'}
-      inp.onchange=function(){var f=inp.files[0];if(!f)return;
+      document.querySelectorAll('input[data-parte]').forEach(function(inp){inp.onchange=function(){var f=inp.files[0];if(!f)return;
+        var pid=inp.getAttribute('data-parte'),out=document.getElementById('prog'+pid);
         if(!window.tus){alert('No se pudo cargar el sistema de subida. Recargá la página.');return}
-        var clave='tg-subida-${ev.id}-'+f.name+'-'+f.size,guardado=null;try{guardado=JSON.parse(localStorage.getItem(clave)||'null')}catch(e){}
-        pr.hidden=false;txt.textContent='Preparando…';
-        var pedir=guardado?Promise.resolve(guardado):fetch('/panel/eventos/${ev.id}/subida',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tamano:f.size,nombre:f.name})})
+        window.subiendo=true;var clave='tg-subida-'+pid+'-'+f.name+'-'+f.size,g=null;try{g=JSON.parse(localStorage.getItem(clave)||'null')}catch(e){}
+        out.innerHTML='<div class="barrita" style="height:8px;margin:4px 0"><i style="width:0%"></i></div><span>Preparando…</span>';var bar=out.querySelector('i'),txt=out.querySelector('span');
+        var pedir=g?Promise.resolve(g):fetch('/panel/eventos/${ev.id}/partes/'+pid+'/subida',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tamano:f.size,nombre:f.name})})
           .then(function(r){return r.json()}).then(function(d){if(d.error)throw new Error(d.error);try{localStorage.setItem(clave,JSON.stringify(d))}catch(e){}return d});
-        pedir.then(function(d){
-          var up=new tus.Upload(f,{uploadUrl:d.url,chunkSize:52428800,retryDelays:[0,3000,6000,12000,30000],
-            onProgress:function(a,t){var p=t?a/t*100:0;bar.style.width=p.toFixed(1)+'%';txt.textContent='Subiendo… '+p.toFixed(0)+'%';det.textContent=mb(a)+' de '+mb(t)},
-            onError:function(e){txt.textContent='Se cortó la subida.';det.textContent='Volvé a elegir el mismo archivo para seguir desde donde quedó.'},
-            onSuccess:function(){try{localStorage.removeItem(clave)}catch(e){}bar.style.width='100%';txt.textContent='¡Subido! Preparando el video…';
-              fetch('/panel/eventos/${ev.id}/subida/lista',{method:'POST'}).finally(function(){setTimeout(function(){location.reload()},2500)})}});
-          up.start()}).catch(function(e){txt.textContent='No se pudo iniciar la subida: '+e.message})};
+        pedir.then(function(d){new tus.Upload(f,{uploadUrl:d.url,chunkSize:52428800,retryDelays:[0,3000,6000,12000,30000],
+          onProgress:function(a,t){var p=t?a/t*100:0;bar.style.width=p.toFixed(1)+'%';txt.textContent='Subiendo '+p.toFixed(0)+'% ('+mb(a)+' de '+mb(t)+')'},
+          onError:function(){txt.textContent='Se cortó. Volvé a elegir el mismo archivo para seguir.';window.subiendo=false},
+          onSuccess:function(){try{localStorage.removeItem(clave)}catch(e){}bar.style.width='100%';txt.textContent='¡Subido! Preparando…';
+            fetch('/panel/eventos/${ev.id}/partes/'+pid+'/lista',{method:'POST'}).finally(function(){window.subiendo=false;if(!document.querySelector('.barrita i[style*="%"]:not([style*="100%"])'))setTimeout(function(){location.reload()},2500)})}}).start()})
+          .catch(function(e){txt.textContent='No se pudo iniciar: '+e.message;window.subiendo=false})}});
     })()</script>`;
   pagina(res, ctx, 'Video', cuerpo, 'eventos');
 }
 
-async function subida(req, res, ctx, ev, lista) {
+async function accionPartes(req, res, ctx, ev, url) {
+  const b = await leerCuerpo(req);
+  const p = b.pid ? db.prepare('SELECT * FROM partes WHERE id = ? AND evento_id = ?').get(Number(b.pid), ev.id) : null;
+  const titulo = String(b.titulo || '').trim().slice(0, 80);
+  let aviso = '';
+  if (b.accion === 'nueva') {
+    const n = partesDe(ev.id).length + 1;
+    db.prepare('INSERT INTO partes (evento_id, titulo, orden, creado) VALUES (?, ?, ?, ?)').run(ev.id, titulo || `Parte ${n}`, n, new Date().toISOString());
+    aviso = '<div class="ok">Parte agregada. Ahora tocá <b>Subir video</b> en su fila.</div>';
+  } else if (b.accion === 'capitulo') {
+    const ini = aSeg(b.inicio);
+    const existe = db.prepare('SELECT 1 FROM partes WHERE evento_id = ? AND uid = ?').get(ev.id, String(b.uid || ''));
+    if (!existe || ini == null) aviso = '<div class="error">Revisá el video y el tiempo de inicio (ej. 42:10 o 1:05:30).</div>';
+    else {
+      const n = partesDe(ev.id).length + 1;
+      db.prepare('INSERT INTO partes (evento_id, titulo, orden, uid, inicio, creado) VALUES (?, ?, ?, ?, ?, ?)').run(ev.id, titulo || `Parte ${n}`, n, b.uid, ini, new Date().toISOString());
+      aviso = '<div class="ok">Capítulo agregado.</div>';
+    }
+  } else if (p && b.accion === 'renombrar' && titulo) {
+    db.prepare('UPDATE partes SET titulo = ? WHERE id = ?').run(titulo, p.id);
+  } else if (p && (b.accion === 'subir' || b.accion === 'bajar')) {
+    const lista = partesDe(ev.id);
+    const i = lista.findIndex((x) => x.id === p.id);
+    const j = b.accion === 'subir' ? i - 1 : i + 1;
+    if (j >= 0 && j < lista.length) { [lista[i], lista[j]] = [lista[j], lista[i]]; lista.forEach((x, k) => db.prepare('UPDATE partes SET orden = ? WHERE id = ?').run(k + 1, x.id)); }
+  } else if (p && b.accion === 'borrar') {
+    db.prepare('DELETE FROM partes WHERE id = ?').run(p.id);
+    if (p.uid && p.inicio == null) {
+      const usa = db.prepare('SELECT COUNT(*) AS n FROM partes WHERE uid = ?').get(p.uid).n;
+      if (!usa) { try { await cf.borrarVideo(p.uid); } catch { /* ya no existe */ } }
+      else db.prepare('DELETE FROM partes WHERE uid = ? AND evento_id = ? AND inicio IS NOT NULL AND NOT EXISTS (SELECT 1 FROM partes q WHERE q.uid = partes.uid AND q.inicio IS NULL)').run(p.uid, ev.id);
+    }
+    renumerar(ev.id);
+    aviso = '<div class="ok">Parte borrada.</div>';
+  }
+  olvidar(ev.id);
+  return paginaVideo(req, res, ctx, ev, url, aviso);
+}
+
+async function subidaParte(req, res, ctx, ev, pid, lista) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Método no permitido' });
+  const p = db.prepare('SELECT * FROM partes WHERE id = ? AND evento_id = ?').get(Number(pid), ev.id);
+  if (!p) return json(res, 404, { error: 'Parte inexistente' });
   if (lista) { olvidar(ev.id); return json(res, 200, { ok: true }); }
   const b = await leerCuerpo(req, 4096);
   const tamano = Number(b.tamano);
   if (!(tamano > 0) || tamano > 60 * 1024 ** 3) return json(res, 422, { error: 'Tamaño de archivo inválido (máximo 60 GB).' });
   try {
-    const s = await cf.crearSubida(tamano, `${ctx.p.slug} · ${ev.titulo} · ${String(b.nombre || '').slice(0, 80)}`);
-    if (ev.video_uid && ev.video_uid !== s.uid) { try { await cf.borrarVideo(ev.video_uid); } catch { /* ya no existe */ } }
-    db.prepare('UPDATE eventos SET video_uid = ? WHERE id = ? AND productora_id = ?').run(s.uid, ev.id, ctx.p.id);
+    const s = await cf.crearSubida(tamano, `${ctx.p.slug} · ${ev.titulo} · ${p.titulo}`);
+    const viejo = p.uid;
+    db.prepare('UPDATE partes SET uid = ? WHERE id = ?').run(s.uid, p.id);
+    // Los capítulos que apuntaban al video viejo pasan al nuevo
+    if (viejo) {
+      db.prepare('UPDATE partes SET uid = ? WHERE evento_id = ? AND uid = ? AND inicio IS NOT NULL').run(s.uid, ev.id, viejo);
+      if (!db.prepare('SELECT COUNT(*) AS n FROM partes WHERE uid = ?').get(viejo).n) { try { await cf.borrarVideo(viejo); } catch { /* ya no existe */ } }
+    }
     olvidar(ev.id);
     return json(res, 200, { url: s.url, uid: s.uid });
   } catch (e) {
@@ -275,7 +357,7 @@ function accesoDePrueba(req, res, ctx, ev) {
 async function borrarEvento(req, res, ctx, ev) {
   const b = await leerCuerpo(req);
   if (!b.si) return formEvento(res, ctx, ev, 'Tildá la confirmación para borrar.');
-  if (ev.video_uid) { try { await cf.borrarVideo(ev.video_uid); } catch { /* ya no existe */ } }
+  for (const u of new Set([ev.video_uid, ...partesDe(ev.id).map((p) => p.uid)].filter(Boolean))) { try { await cf.borrarVideo(u); } catch { /* ya no existe */ } }
   if (ev.cf_uid) {
     try { await cf.borrarEntrada(ev.cf_uid); } catch (e) { if (!/404/.test(e.message)) return formEvento(res, ctx, ev, 'No se pudo borrar la señal: ' + e.message); }
   }
@@ -436,8 +518,10 @@ async function manejar(req, res, url, partes) {
       formEvento(res, ctx, ev, '');
       return true;
     }
+    if (s3 === 'transmision' && req.method === 'POST' && ev.tipo === 'grabado') return await accionPartes(req, res, ctx, ev, url), true;
     if (s3 === 'transmision') return await transmision(req, res, ctx, ev, url), true;
-    if (s3 === 'subida') return await subida(req, res, ctx, ev, partes[4] === 'lista'), true;
+    if (s3 === 'partes' && !partes[4] && req.method === 'POST') return await accionPartes(req, res, ctx, ev, url), true;
+    if (s3 === 'partes' && /^\d+$/.test(partes[4] || '')) return await subidaParte(req, res, ctx, ev, partes[4], partes[5] === 'lista'), true;
     if (s3 === 'prueba') return accesoDePrueba(req, res, ctx, ev), true;
     if (s3 === 'borrar' && req.method === 'POST') return await borrarEvento(req, res, ctx, ev), true;
     return redirigir(res, `/panel/eventos/${ev.id}`), true;
