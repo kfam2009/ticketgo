@@ -14,6 +14,8 @@ const ESTADOS_EV = { borrador: ['Borrador', ''], publicado: ['Publicado', 'verde
 const pillEv = (e) => `<span class="pill ${ESTADOS_EV[e][1]}">${ESTADOS_EV[e][0]}</span>`;
 const SEÑAL = { vivo: ['EN VIVO', 'rojo'], repeticion: ['Repetición', 'verde'], procesando: ['Preparando repetición', 'amarillo'], espera: ['Sin señal', ''], terminado: ['Finalizado', ''], cerrado: ['Pausado', ''], error: ['Sin datos', ''], grabado: ['Video listo', 'verde'], sinvideo: ['Falta el video', 'amarillo'] };
 const pillSeñal = (s) => `<span class="pill ${(SEÑAL[s] || SEÑAL.error)[1]}">${(SEÑAL[s] || SEÑAL.error)[0]}</span>`;
+// En modo test, las compras de prueba cuentan como ventas (para mostrar cómo se ven ventas y métricas)
+const VENDIDA = (p) => (p && p.estado === 'test' ? "IN ('aprobado', 'prueba')" : "= 'aprobado'");
 const ESTADOS_OR = { aprobado: ['Aprobada', 'verde'], prueba: ['Prueba', 'cyan'], pendiente: ['Pendiente', 'amarillo'], procesando: ['Procesando', 'amarillo'], rechazado: ['Rechazada', ''], devuelto: ['Devuelta', 'rojo'] };
 const pillOr = (s) => `<span class="pill ${(ESTADOS_OR[s] || ['', ''])[1]}">${(ESTADOS_OR[s] || [s])[0]}</span>`;
 
@@ -26,8 +28,8 @@ async function inicio(req, res, ctx, url) {
   const { p } = ctx;
   const r = db.prepare(`SELECT
       (SELECT COUNT(*) FROM eventos WHERE productora_id = ? AND (fecha IS NULL OR fecha >= ?)) AS proximos,
-      COALESCE(SUM(CASE WHEN estado = 'aprobado' THEN cantidad END), 0) AS entradas,
-      COALESCE(SUM(CASE WHEN estado = 'aprobado' THEN monto - comision END), 0) AS neto,
+      COALESCE(SUM(CASE WHEN estado ${VENDIDA(ctx.p)} THEN cantidad END), 0) AS entradas,
+      COALESCE(SUM(CASE WHEN estado ${VENDIDA(ctx.p)} THEN monto - comision END), 0) AS neto,
       COALESCE(SUM(CASE WHEN estado = 'prueba' THEN cantidad END), 0) AS pruebas
     FROM ordenes WHERE productora_id = ?`).get(p.id, new Date(Date.now() - 12 * 3600e3).toISOString(), p.id);
   const mirando = db.prepare('SELECT COUNT(*) AS n FROM accesos a JOIN eventos e ON e.id = a.evento_id WHERE e.productora_id = ? AND a.sesion_latido > ?').get(p.id, Date.now() - 60e3).n;
@@ -35,7 +37,7 @@ async function inicio(req, res, ctx, url) {
   const test = p.estado === 'test' ? `<div class="modotest">Estás en <b>modo test</b>: podés crear eventos, transmitir y hacer compras de prueba sin cobrar.
     Cuando quieras vender de verdad, <a href="https://wa.me/${esc(config.whatsapp)}?text=${encodeURIComponent(`Hola! Quiero activar mi productora ${p.nombre} en ${config.marca}`)}" target="_blank" rel="noopener" style="color:#fff">comunicate con ${esc(config.marca)} para activar tu perfil</a>.</div>` : '';
   const susp = p.estado === 'suspendida' ? '<div class="error">Tu productora está suspendida: la venta está pausada. Comunicate con nosotros.</div>' : '';
-  const prox = db.prepare(`SELECT e.*, (SELECT COALESCE(SUM(cantidad),0) FROM ordenes o WHERE o.evento_id = e.id AND o.estado = 'aprobado') AS vendidas
+  const prox = db.prepare(`SELECT e.*, (SELECT COALESCE(SUM(cantidad),0) FROM ordenes o WHERE o.evento_id = e.id AND o.estado ${VENDIDA(ctx.p)}) AS vendidas
       FROM eventos e WHERE e.productora_id = ? AND (e.fecha IS NULL OR e.fecha >= ?) ORDER BY e.fecha IS NULL, e.fecha LIMIT 1`).get(p.id, new Date(Date.now() - 12 * 3600e3).toISOString());
   const cuentas = db.prepare(`SELECT COUNT(*) AS evs, COUNT(CASE WHEN estado = 'publicado' THEN 1 END) AS pub,
       (SELECT COUNT(*) FROM accesos a JOIN eventos e2 ON e2.id = a.evento_id WHERE e2.productora_id = ? AND a.primera_vista IS NOT NULL) AS vistas
@@ -87,7 +89,7 @@ async function inicio(req, res, ctx, url) {
 
 /* ------------------------------------------------------------------ eventos */
 async function listaEventos(req, res, ctx) {
-  const evs = db.prepare(`SELECT e.*, (SELECT COALESCE(SUM(cantidad),0) FROM ordenes o WHERE o.evento_id = e.id AND o.estado = 'aprobado') AS vendidas
+  const evs = db.prepare(`SELECT e.*, (SELECT COALESCE(SUM(cantidad),0) FROM ordenes o WHERE o.evento_id = e.id AND o.estado ${VENDIDA(ctx.p)}) AS vendidas
       FROM eventos e WHERE e.productora_id = ? ORDER BY e.fecha IS NULL, e.fecha DESC`).all(ctx.p.id);
   const estados = await Promise.all(evs.map((e) => estadoEvento({ ...e, activo: 1 }).catch(() => ({ estado: 'error' }))));
   const filas = evs.map((e, i) => `<tr>
@@ -407,20 +409,20 @@ async function ventasLista(req, res, ctx, url) {
 /* ------------------------------------------------------------------ métricas */
 function metricas(req, res, ctx) {
   const evs = db.prepare(`SELECT e.id, e.titulo, e.fecha, e.cupo,
-      COALESCE(SUM(CASE WHEN o.estado = 'aprobado' THEN o.cantidad END), 0) AS entradas,
-      COALESCE(SUM(CASE WHEN o.estado = 'aprobado' THEN o.monto END), 0) AS bruto,
-      COALESCE(SUM(CASE WHEN o.estado = 'aprobado' THEN o.comision END), 0) AS comision,
-      (SELECT COUNT(*) FROM accesos a JOIN ordenes oo ON oo.id = a.orden_id WHERE a.evento_id = e.id AND oo.estado = 'aprobado' AND a.primera_vista IS NOT NULL) AS vieron
+      COALESCE(SUM(CASE WHEN o.estado ${VENDIDA(ctx.p)} THEN o.cantidad END), 0) AS entradas,
+      COALESCE(SUM(CASE WHEN o.estado ${VENDIDA(ctx.p)} THEN o.monto END), 0) AS bruto,
+      COALESCE(SUM(CASE WHEN o.estado ${VENDIDA(ctx.p)} THEN o.comision END), 0) AS comision,
+      (SELECT COUNT(*) FROM accesos a JOIN ordenes oo ON oo.id = a.orden_id WHERE a.evento_id = e.id AND oo.estado ${VENDIDA(ctx.p)} AND a.primera_vista IS NOT NULL) AS vieron
     FROM eventos e LEFT JOIN ordenes o ON o.evento_id = e.id WHERE e.productora_id = ? GROUP BY e.id ORDER BY e.fecha DESC`).all(ctx.p.id);
   const tot = evs.reduce((t, e) => ({ entradas: t.entradas + e.entradas, bruto: t.bruto + e.bruto, comision: t.comision + e.comision, vieron: t.vieron + e.vieron }), { entradas: 0, bruto: 0, comision: 0, vieron: 0 });
-  const dias = db.prepare(`SELECT substr(creado, 1, 10) AS dia, SUM(cantidad) AS n FROM ordenes WHERE productora_id = ? AND estado = 'aprobado' AND creado >= ? GROUP BY dia ORDER BY dia`)
+  const dias = db.prepare(`SELECT substr(creado, 1, 10) AS dia, SUM(cantidad) AS n FROM ordenes WHERE productora_id = ? AND estado ${VENDIDA(ctx.p)} AND creado >= ? GROUP BY dia ORDER BY dia`)
     .all(ctx.p.id, new Date(Date.now() - 30 * 864e5).toISOString());
   const max = Math.max(1, ...dias.map((d) => d.n));
   const barras = dias.length ? `<div style="display:flex;align-items:flex-end;gap:4px;height:140px;padding-top:10px">${dias.map((d) => `<div title="${esc(d.dia)}: ${d.n}" style="flex:1;min-width:6px;background:linear-gradient(var(--cyan),#1f7fa0);border-radius:4px 4px 0 0;height:${Math.max(4, Math.round(d.n / max * 130))}px"></div>`).join('')}</div>
     <div class="fila muted" style="justify-content:space-between;font-size:12px"><span>${esc(dias[0].dia)}</span><span>${esc(dias[dias.length - 1].dia)}</span></div>` : '<p class="muted">Todavía no hay ventas en los últimos 30 días.</p>';
   const filas = evs.map((e) => `<tr><td><b>${esc(e.titulo)}</b><br><small>${D.fechaLinda(e.fecha, true)}</small></td><td>${e.entradas}${e.cupo ? ` <small>(${Math.round(e.entradas / e.cupo * 100)}% del cupo)</small>` : ''}</td>
     <td>${D.plata(e.bruto)}</td><td>${D.plata(e.comision)}</td><td><b>${D.plata(e.bruto - e.comision)}</b></td><td>${e.vieron}${e.entradas ? ` <small>(${Math.round(e.vieron / e.entradas * 100)}%)</small>` : ''}</td></tr>`).join('');
-  const cuerpo = `<h1>Métricas</h1><p class="sub">Solo cuentan las ventas aprobadas (no las de prueba).</p>
+  const cuerpo = `<h1>Métricas</h1><p class="sub">${ctx.p.estado === 'test' ? 'Modo test: acá se cuentan las compras de prueba, para que veas cómo se ven tus números. Cuando actives la productora, solo cuentan las ventas reales.' : 'Solo cuentan las ventas aprobadas (no las de prueba).'}</p>
     <div class="kpis"><div class="kpi g"><b>${tot.entradas}</b><span>Entradas vendidas</span></div><div class="kpi c"><b>${D.plata(tot.bruto)}</b><span>Ventas brutas</span></div>
       <div class="kpi w"><b>${D.plata(tot.bruto - tot.comision)}</b><span>Neto para vos</span></div><div class="kpi r"><b>${tot.entradas ? Math.round(tot.vieron / tot.entradas * 100) : 0}%</b><span>De los compradores entraron a ver</span></div></div>
     <div class="card"><b>Entradas vendidas por día (últimos 30 días)</b>${barras}</div>

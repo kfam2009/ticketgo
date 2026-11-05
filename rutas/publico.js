@@ -101,7 +101,7 @@ async function paginaEvento(req, res, p, e) {
       const token = crypto.randomBytes(16).toString('hex');
       const r = db.prepare(`INSERT INTO ordenes (evento_id, productora_id, email, nombre, telefono, cantidad, monto, comision, estado, token, creado, modificado)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?)`).run(e.id, p.id, email, String(d.nombre || '').trim().slice(0, 120),
-        String(d.telefono || '').replace(/[^0-9+ ]/g, '').slice(0, 30), cantidad, monto, prueba ? 0 : ventas.comisionDe(p, monto, cantidad), token, new Date().toISOString(), new Date().toISOString());
+        String(d.telefono || '').replace(/[^0-9+ ]/g, '').slice(0, 30), cantidad, monto, ventas.comisionDe(p, monto, cantidad), token, new Date().toISOString(), new Date().toISOString());
       const orden = db.prepare('SELECT * FROM ordenes WHERE id = ?').get(r.lastInsertRowid);
       const base = baseUrl(req);
       if (prueba || monto === 0) {
