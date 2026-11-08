@@ -63,6 +63,27 @@ async function ver(req, res, t, accion) {
     if (a.sesion === s) db.prepare('UPDATE accesos SET sesion_latido = 0 WHERE id = ?').run(a.id);
     return json(res, 200, { ok: true });
   }
+  if (accion === 'descarga') {
+    if (deCompra && a.sesion !== s) return json(res, 200, { error: 'Abrí el video en esta pantalla para descargarlo.' });
+    const ev = eventoDe(a);
+    if (!ev || !ev.descargable) return json(res, 200, { error: 'Este evento no permite descargar el video.' });
+    const est = await estadoEvento(ev);
+    if (est.estado !== 'repeticion' && est.estado !== 'grabado') return json(res, 200, { error: 'La descarga se habilita cuando termina la transmisión.' });
+    try {
+      const vistos = new Set();
+      const archivos = [];
+      for (const p of est.partes) {
+        if (vistos.has(p.uid)) continue; // capítulos de un mismo video: un solo archivo
+        vistos.add(p.uid);
+        const d = await cf.descarga(p.uid);
+        archivos.push({ titulo: p.titulo || `Parte ${archivos.length + 1}`, listo: d.listo, pct: d.pct, url: d.listo ? await cf.urlDescarga(p.uid) : null });
+      }
+      return json(res, 200, { archivos });
+    } catch (e) {
+      console.error('[descarga]', e.message);
+      return json(res, 200, { error: 'No se pudo preparar la descarga. Probá de nuevo en unos minutos.' });
+    }
+  }
   if (accion === 'iniciar') {
     const otraActiva = a.sesion && a.sesion !== s && Number(a.sesion_latido) > ahoraMs - LIBERA;
     if (otraActiva && deCompra) return json(res, 200, { ocupado: true });
@@ -85,7 +106,8 @@ async function ver(req, res, t, accion) {
     console.error('[ver]', e.message);
     return json(res, 200, { estado: 'error' });
   }
-  return json(res, 200, { estado: est.estado, titulo: ev.titulo, fuentes: necesitaFuentes ? lista : undefined });
+  const descargable = !!ev.descargable && (est.estado === 'repeticion' || est.estado === 'grabado');
+  return json(res, 200, { estado: est.estado, titulo: ev.titulo, descargable, fuentes: necesitaFuentes ? lista : undefined });
 }
 
 async function manejar(req, res, url, partes) {

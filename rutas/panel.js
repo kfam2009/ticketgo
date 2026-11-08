@@ -131,6 +131,8 @@ function formEvento(res, ctx, ev, err = '') {
         <small>Borrador: solo lo ves vos. Publicado: aparece en tu página. Oculto: no aparece, pero se puede comprar con el link.</small>
         <label class="check" style="margin-top:14px"><input type="checkbox" name="venta_activa" value="1" ${v.venta_activa ? 'checked' : ''}> Venta abierta</label>
         <label class="check"><input type="checkbox" name="grabar" value="1" ${v.grabar ? 'checked' : ''}> Grabar para repetición</label>
+        <label class="check"><input type="checkbox" name="descargable" value="1" ${v.descargable ? 'checked' : ''}> Permitir que el comprador descargue el video</label>
+        <small>Aparece un botón "Descargar" en el reproductor cuando termina la transmisión (o en el video grabado). Ojo: el archivo descargado se puede compartir.</small>
         <label>Repetición disponible (horas después de terminar, 0 = sin límite)</label><input type="number" name="repeticion_horas" min="0" max="2160" value="${esc(v.repeticion_horas != null ? v.repeticion_horas : 48)}">
       </div></div>
       <div class="fila" style="margin-top:18px"><button class="btn">${nuevo ? 'Crear evento' : 'Guardar cambios'}</button>
@@ -156,6 +158,7 @@ async function guardarEvento(req, res, ctx, ev) {
     ...(ev ? {} : { tipo: b.tipo === 'grabado' ? 'grabado' : 'vivo' }),
     venta_activa: b.venta_activa ? 1 : 0,
     grabar: b.grabar ? 1 : 0,
+    descargable: b.descargable ? 1 : 0,
     repeticion_horas: Math.min(Math.max(parseInt(b.repeticion_horas, 10) || 0, 0), 2160),
   };
   if (!titulo) return formEvento(res, ctx, { ...(ev || {}), ...datos, fecha_input: b.fecha }, 'Poné un título.');

@@ -129,7 +129,7 @@ async function paginaEvento(req, res, p, e) {
         <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta)${Number(e.precio_usd) > 0 ? ', o con PayPal si estás en el exterior' : ''}.</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
         <li>${e.tipo === 'grabado' ? 'Abrís el link y lo mirás cuando quieras' : 'El día del evento lo abrís y mirás'}. Cada entrada funciona en una pantalla a la vez.</li></ol></div></div>
     <div class="card" style="position:sticky;top:80px">
-      <span class="muted">Entrada</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</div>
+      <span class="muted">Entrada</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</div>${e.descargable ? '<p class="muted" style="margin:6px 0 0;font-size:14px">⬇ Incluye descarga del video para guardarlo en tu compu o celular.</p>' : ''}
       ${Number(e.precio_usd) > 0 ? `<div class="muted" style="margin-top:2px">Desde el exterior: <b style="color:#fff">USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))}</b> con PayPal</div>` : ''}
       ${e.cupo && quedanCupo <= 20 && quedanCupo > 0 ? `<p class="pill amarillo">Quedan ${quedanCupo}</p>` : ''}
       ${motivo ? `<div class="aviso" style="margin-top:12px">${esc(motivo)}</div>` : `
