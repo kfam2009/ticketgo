@@ -76,7 +76,11 @@ async function ver(req, res, t, accion) {
         if (vistos.has(p.uid)) continue; // capítulos de un mismo video: un solo archivo
         vistos.add(p.uid);
         const d = await cf.descarga(p.uid);
-        archivos.push({ titulo: p.titulo || `Parte ${archivos.length + 1}`, listo: d.listo, pct: d.pct, url: d.listo ? await cf.urlDescarga(p.uid) : null });
+        const titulo = p.titulo || `Parte ${archivos.length + 1}`;
+        const fecha = ev.fecha ? new Date(ev.fecha).toLocaleDateString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }) : '';
+        const varias = new Set(est.partes.map((x) => x.uid)).size > 1;
+        const nombre = [ev.titulo, fecha, varias ? titulo : ''].filter(Boolean).join(' ');
+        archivos.push({ titulo, listo: d.listo, pct: d.pct, url: d.listo ? await cf.urlDescarga(p.uid, nombre) : null });
       }
       return json(res, 200, { archivos });
     } catch (e) {
