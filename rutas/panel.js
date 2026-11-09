@@ -522,8 +522,7 @@ async function mercadoPago(req, res, ctx, url, accionMP) {
   if (url.searchParams.get('ok')) aviso = '<div class="ok"><b>¡Listo! Tu cuenta de Mercado Pago quedó conectada.</b> Desde ahora cada venta entra directo a tu cuenta.</div>';
   if (url.searchParams.get('fuera')) aviso = '<div class="ok">Desconectaste tu cuenta. Las ventas se cobran a través de la plataforma y te liquidamos lo recaudado.</div>';
   const pa = D.productora(p.id);
-  const pct = pa.comision_pct != null ? Number(pa.comision_pct) : config.comisionPct;
-  const fija = pa.comision_fija != null ? Number(pa.comision_fija) : config.comisionFija;
+  const { pct, fija } = ventas.comisionPara(pa);
   const ej = 10000;
   const com = ventas.comisionDe(pa, ej, 1);
   const reparto = `<div class="card"><h3>Cómo se reparte cada venta</h3>

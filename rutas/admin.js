@@ -6,6 +6,8 @@ const { enviar, redirigir, leerCuerpo, baseUrl } = require('../lib/http');
 const { panel } = require('../lib/vistas');
 const auth = require('../lib/auth');
 const D = require('../lib/datos');
+const { ajuste } = require('../lib/db');
+const ventas = require('../lib/ventas');
 
 const ESTADOS = { test: ['Modo test', 'amarillo'], activa: ['Activa', 'verde'], suspendida: ['Suspendida', 'rojo'] };
 
@@ -17,6 +19,16 @@ async function inicio(req, res, u, url) {
     if (p && b.accion === 'estado' && ESTADOS[b.estado]) {
       db.prepare('UPDATE productoras SET estado = ? WHERE id = ?').run(b.estado, p.id);
       aviso = `<div class="ok">${esc(p.nombre)}: ${ESTADOS[b.estado][0]}.</div>`;
+    }
+    if (b.accion === 'general') {
+      const pct = Number(b.pct);
+      const fija = b.fija === '' || b.fija == null ? 0 : Number(b.fija);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 50 || !Number.isFinite(fija) || fija < 0) aviso = '<div class="error">Revisá los valores: el porcentaje va de 0 a 50.</div>';
+      else {
+        ajuste('comision_pct', String(pct));
+        ajuste('comision_fija', String(fija));
+        aviso = `<div class="ok">Comisión general actualizada: ${pct}% para ${esc(config.marca)} y ${100 - pct}% para la productora${fija ? ` (+ ${D.plata(fija)} por entrada)` : ''}. Aplica a las ventas nuevas.</div>`;
+      }
     }
     if (p && b.accion === 'comision') {
       const pct = b.pct === '' ? null : Math.max(0, Math.min(50, Number(b.pct)));
@@ -47,9 +59,9 @@ async function inicio(req, res, u, url) {
       <form method="post" class="fila"><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="accion" value="estado">
         ${Object.entries(ESTADOS).filter(([k]) => k !== p.estado).map(([k, t]) => `<button class="btn ${k === 'activa' ? 'verde' : k === 'suspendida' ? 'peligro' : 'sec'} chico" name="estado" value="${k}">${k === 'activa' ? 'Activar' : k === 'test' ? 'Pasar a test' : 'Suspender'}</button>`).join('')}</form>
       <form method="post" style="margin-top:10px"><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="accion" value="comision">
-        <div class="dos"><div><label>Comisión %</label><input name="pct" type="number" step="0.1" min="0" max="50" value="${p.comision_pct != null ? p.comision_pct : ''}" placeholder="${config.comisionPct}"></div>
-        <div><label>Fijo por entrada $</label><input name="fija" type="number" step="1" min="0" value="${p.comision_fija != null ? p.comision_fija : ''}" placeholder="${config.comisionFija}"></div></div>
-        <small>Vacío = la general (${config.comisionPct}% + $${config.comisionFija}).</small><br><button class="btn sec chico" style="margin-top:6px">Guardar comisión</button></form>
+        <div class="dos"><div><label>Comisión %</label><input name="pct" type="number" step="0.1" min="0" max="50" value="${p.comision_pct != null ? p.comision_pct : ''}" placeholder="${ventas.comisionGeneral().pct}"></div>
+        <div><label>Fijo por entrada $</label><input name="fija" type="number" step="1" min="0" value="${p.comision_fija != null ? p.comision_fija : ''}" placeholder="${ventas.comisionGeneral().fija}"></div></div>
+        <small>Vacío = la general (${ventas.comisionGeneral().pct}% + $${ventas.comisionGeneral().fija}).</small><br><button class="btn sec chico" style="margin-top:6px">Guardar comisión</button></form>
       <form method="post" style="margin-top:10px"><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="accion" value="clave">
         <label>Nueva clave para la productora</label><div class="fila"><input name="clave" minlength="8" style="flex:1"><button class="btn sec chico">Cambiar</button></div></form>
       <a class="btn chico" style="margin-top:10px" href="/admin/como/${p.id}">Entrar a su panel</a>
@@ -60,6 +72,15 @@ async function inicio(req, res, u, url) {
     ${!config.mailListo() ? '<div class="aviso">Falta configurar Brevo (BREVO_API_KEY / MAIL_FROM): no salen los mails.</div>' : ''}
     <div class="kpis"><div class="kpi c"><b>${ps.length}</b><span>Productoras</span></div><div class="kpi g"><b>${tot.entradas}</b><span>Entradas vendidas</span></div>
       <div class="kpi w"><b>${D.plata(tot.bruto)}</b><span>Ventas totales</span></div><div class="kpi r"><b>${D.plata(tot.comision)}</b><span>Tu comisión</span></div></div>
+    ${(() => { const g = ventas.comisionGeneral(); return `<form method="post" class="card" style="margin-bottom:14px"><input type="hidden" name="accion" value="general">
+      <h3 style="margin-top:0">Reparto de cada venta</h3>
+      <p class="muted" style="margin-top:0">Comisión general de ${esc(config.marca)} para todas las productoras (salvo las que tengan una propia en "Gestionar"). Con Mercado Pago conectado, se reparte sola en cada venta.</p>
+      <div class="fila" style="align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div><label>${esc(config.marca)} %</label><input name="pct" type="number" step="0.1" min="0" max="50" value="${g.pct}" style="max-width:120px" oninput="this.form.querySelector('[data-prod]').textContent=(100-(Number(this.value)||0)).toLocaleString('es-AR')+'%'"></div>
+        <div><label>Productora</label><div data-prod style="font-weight:800;font-size:22px;padding:8px 0">${(100 - g.pct).toLocaleString('es-AR')}%</div></div>
+        <div><label>Fijo por entrada $ (opcional)</label><input name="fija" type="number" step="1" min="0" value="${g.fija || ''}" placeholder="0" style="max-width:160px"></div>
+        <button class="btn">Guardar reparto</button></div>
+      <small class="muted">La comisión propia de Mercado Pago sale de la parte de la productora. Los cambios aplican a las ventas nuevas.</small></form>`; })()}
     <div class="card tabla">${ps.length ? `<table><thead><tr><th>Productora</th><th>Eventos</th><th>Entradas</th><th>Ventas</th><th>Comisión</th><th></th></tr></thead><tbody>${filas}</tbody></table>`
       : `<p class="muted" style="margin:0">Todavía no hay productoras. Se registran en <a href="/registro">${esc(baseUrl(req))}/registro</a>.</p>`}</div>`;
   enviar(res, 200, panel({ titulo: 'Productoras', cuerpo, usuario: u, productora: null, activo: 'admin' }));
