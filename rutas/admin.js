@@ -41,7 +41,7 @@ async function inicio(req, res, u, url) {
     FROM productoras p ORDER BY p.creado DESC`).all();
   const tot = ps.reduce((t, p) => ({ bruto: t.bruto + p.bruto, comision: t.comision + p.comision, entradas: t.entradas + p.entradas }), { bruto: 0, comision: 0, entradas: 0 });
   const filas = ps.map((p) => `<tr>
-    <td><b>${esc(p.nombre)}</b> <span class="pill ${ESTADOS[p.estado][1]}">${ESTADOS[p.estado][0]}</span><br><a href="/${esc(p.slug)}" target="_blank">/${esc(p.slug)}</a><br><small>${esc(p.email || '')}${p.whatsapp ? ' · ' + esc(p.whatsapp) : ''}</small><br><small>Alta ${D.fechaLinda(p.creado, true)}</small></td>
+    <td><b>${esc(p.nombre)}</b> <span class="pill ${ESTADOS[p.estado][1]}">${ESTADOS[p.estado][0]}</span>${p.mp_token ? ' <span class="pill cyan" title="Cobra en su propia cuenta de Mercado Pago">MP conectado</span>' : ''}<br><a href="/${esc(p.slug)}" target="_blank">/${esc(p.slug)}</a><br><small>${esc(p.email || '')}${p.whatsapp ? ' · ' + esc(p.whatsapp) : ''}</small><br><small>Alta ${D.fechaLinda(p.creado, true)}</small></td>
     <td>${p.eventos}</td><td>${p.entradas}</td><td>${D.plata(p.bruto)}</td><td><b>${D.plata(p.comision)}</b></td>
     <td><details><summary class="btn sec chico">Gestionar</summary><div style="min-width:260px;margin-top:10px">
       <form method="post" class="fila"><input type="hidden" name="id" value="${p.id}"><input type="hidden" name="accion" value="estado">

@@ -86,7 +86,7 @@ async function paginaEvento(req, res, p, e) {
   else if (!e.venta_activa) motivo = 'La venta para este evento está cerrada.';
   else if (termino) motivo = 'Este evento ya terminó.';
   else if (quedanCupo < 1) motivo = 'Entradas agotadas.';
-  else if (!prueba && Number(e.precio) > 0 && !config.mpListo()) motivo = 'La venta online todavía no está habilitada.';
+  else if (!prueba && Number(e.precio) > 0 && !ventas.puedeCobrarMP(p)) motivo = 'La venta online todavía no está habilitada.';
 
   let errores = [];
   const d = req.method === 'POST' ? await leerCuerpo(req) : {};
@@ -151,10 +151,10 @@ async function compra(req, res, token, url) {
   let o = db.prepare('SELECT * FROM ordenes WHERE token = ?').get(token);
   if (!o) return enviar(res, 404, mensaje('Compra no encontrada', ''));
   const base = baseUrl(req);
-  if (o.estado === 'pendiente' && config.mpListo()) {
+  if (o.estado === 'pendiente' && (config.mpListo() || o.mp_split)) {
     const pid = url.searchParams.get('payment_id') || url.searchParams.get('collection_id');
     try {
-      if (pid && /^\d+$/.test(pid)) await ventas.procesarPago(pid, base);
+      if (pid && /^\d+$/.test(pid)) await ventas.procesarPago(pid, base, o.id);
       else await ventas.revisarOrden(o.id, base);
     } catch (e) { console.error('[compra]', e.message); }
     o = db.prepare('SELECT * FROM ordenes WHERE token = ?').get(token);
@@ -289,9 +289,10 @@ async function webhookMP(req, res, url) {
   const b = await leerCuerpo(req).catch(() => ({}));
   const tipo = b.type || url.searchParams.get('type') || url.searchParams.get('topic');
   const id = (b.data && b.data.id) || url.searchParams.get('data.id') || url.searchParams.get('id');
-  if (tipo === 'payment' && id && /^\d+$/.test(String(id)) && config.mpListo()) {
+  const ordenId = /^\d+$/.test(url.searchParams.get('o') || '') ? Number(url.searchParams.get('o')) : null;
+  if (tipo === 'payment' && id && /^\d+$/.test(String(id)) && (config.mpListo() || ordenId)) {
     try {
-      await ventas.procesarPago(String(id), baseUrl(req));
+      await ventas.procesarPago(String(id), baseUrl(req), ordenId);
     } catch (e) {
       console.error('[webhook]', id, e.message);
       if (e.status === 404) return json(res, 200, { ok: true });

@@ -81,7 +81,7 @@ async function inicio(req, res, ctx, url) {
       ${accion('g', '/panel/ventas', 'billete', 'Ventas', 'Compras y reenvíos')}
       ${accion('c', '/panel/metricas', 'grafico', 'Métricas', 'Cómo te fue')}
       ${accion('r', '/panel/perfil', 'perfil', 'Mi página', 'Logo y datos')}
-      ${accion('w', '/panel/mercadopago', 'wallet', 'Mercado Pago', 'Cobrá en tu cuenta', true)}
+      ${accion('w', '/panel/mercadopago', 'wallet', 'Mercado Pago', ventas.mpConectada(p) ? 'Cuenta conectada ✓' : 'Cobrá en tu cuenta', !config.mpOauthListo())}
       ${accion('c', '/panel/paypal', 'mundo', 'PayPal', 'Vendé al exterior en dólares')}
     </div>`;
   pagina(res, ctx, 'Inicio', cuerpo, 'inicio');
@@ -497,6 +497,50 @@ function paypal(req, res, ctx) {
   pagina(res, ctx, 'PayPal', cuerpo, 'inicio');
 }
 
+/* ------------------------------------------------------------------ Mercado Pago de la productora */
+async function mercadoPago(req, res, ctx, url, accionMP) {
+  const { p } = ctx;
+  const base = baseUrl(req);
+  if (!config.mpOauthListo()) return pronto(res, ctx, 'Asociar Mercado Pago', 'Muy pronto vas a poder conectar tu cuenta de Mercado Pago con un botón para que cada venta entre directo a tu cuenta. Mientras tanto, las ventas se cobran a través de la plataforma y te liquidamos lo recaudado.');
+  let aviso = '';
+  if (accionMP === 'conectar') {
+    if (ctx.u.comoAdmin) aviso = '<div class="error">Como administrador no podés conectar una cuenta: lo tiene que hacer la productora desde su panel, con su propia cuenta de Mercado Pago.</div>';
+    else return redirigir(res, ventas.urlConexionMP(p, base));
+  }
+  if (accionMP === 'vuelta') {
+    const code = url.searchParams.get('code');
+    if (url.searchParams.get('error') || !code) aviso = '<div class="error">No se conectó la cuenta (cancelaste o Mercado Pago no lo autorizó). Podés intentar de nuevo.</div>';
+    else {
+      try { await ventas.conectarMP(p, code, url.searchParams.get('state'), base); return redirigir(res, '/panel/mercadopago?ok=1'); }
+      catch (e) { aviso = `<div class="error">No se pudo conectar: ${esc(e.message)}</div>`; }
+    }
+  }
+  if (accionMP === 'desconectar' && req.method === 'POST') {
+    const b = await leerCuerpo(req);
+    if (b.si) { ventas.desconectarMP(p.id); return redirigir(res, '/panel/mercadopago?fuera=1'); }
+  }
+  if (url.searchParams.get('ok')) aviso = '<div class="ok"><b>¡Listo! Tu cuenta de Mercado Pago quedó conectada.</b> Desde ahora cada venta entra directo a tu cuenta.</div>';
+  if (url.searchParams.get('fuera')) aviso = '<div class="ok">Desconectaste tu cuenta. Las ventas se cobran a través de la plataforma y te liquidamos lo recaudado.</div>';
+  const pa = D.productora(p.id);
+  const pct = pa.comision_pct != null ? Number(pa.comision_pct) : config.comisionPct;
+  const fija = pa.comision_fija != null ? Number(pa.comision_fija) : config.comisionFija;
+  const ej = 10000;
+  const com = ventas.comisionDe(pa, ej, 1);
+  const reparto = `<div class="card"><h3>Cómo se reparte cada venta</h3>
+    <p>El comprador paga con Mercado Pago y <b>la plata entra a tu cuenta</b>. En el mismo momento Mercado Pago le pasa a ${esc(config.marca)} su comisión: <b>${pct}%</b>${fija ? ` + ${D.plata(fija)} por entrada` : ''}.</p>
+    <p class="muted" style="margin-bottom:0">Ejemplo con una entrada de ${D.plata(ej)}: ${esc(config.marca)} recibe ${D.plata(com)} y a vos te quedan ${D.plata(ej - com)}, menos la comisión propia de Mercado Pago (depende del plazo de cobro de tu cuenta). Si hay una devolución, Mercado Pago también devuelve la parte de ${esc(config.marca)}.</p></div>`;
+  const cuerpo = ventas.mpConectada(pa)
+    ? `<h1>Mercado Pago</h1>${aviso}<div class="card"><span class="pill verde">CONECTADA</span>
+        <p>Tu cuenta de Mercado Pago${pa.mp_user_id ? ` (usuario ${esc(pa.mp_user_id)})` : ''} está conectada desde el ${esc(D.fechaLinda(pa.mp_conectado, true))}. Las ventas entran directo a tu cuenta.</p>
+        <form method="post" action="/panel/mercadopago/desconectar" class="fila" style="margin-top:10px"><label class="check" style="margin:0"><input type="checkbox" name="si" value="1" required> Quiero desconectar mi cuenta</label><button class="btn peligro chico">Desconectar</button></form></div>${reparto}`
+    : `<h1>Conectá tu Mercado Pago</h1>${aviso}<div class="card">
+        <p>Conectá tu cuenta para que <b>cada venta entre directo a tu Mercado Pago</b>, sin esperar liquidaciones.</p>
+        <ol style="line-height:1.7"><li>Tocá el botón: te lleva a la página oficial de Mercado Pago.</li><li>Iniciá sesión con la cuenta donde querés cobrar.</li><li>Tocá <b>Autorizar</b>. Listo, volvés acá.</li></ol>
+        <p class="muted">Nunca te vamos a pedir tu clave de Mercado Pago: la autorización se hace en su página. Podés desconectarla cuando quieras.</p>
+        <a class="btn" href="/panel/mercadopago/conectar">Conectar Mercado Pago</a></div>${reparto}`;
+  pagina(res, ctx, 'Mercado Pago', cuerpo, 'inicio');
+}
+
 function pronto(res, ctx, titulo, texto) {
   pagina(res, ctx, titulo, `<h1>${esc(titulo)}</h1><div class="card"><span class="pill cyan">PRÓXIMAMENTE</span><p>${texto}</p>
     <a class="btn sec" href="/panel">Volver</a></div>`, 'inicio');
@@ -535,7 +579,7 @@ async function manejar(req, res, url, partes) {
   if (s1 === 'metricas') return metricas(req, res, ctx), true;
   if (s1 === 'perfil') return await perfil(req, res, ctx), true;
   if (s1 === 'paypal') return paypal(req, res, ctx), true;
-  if (s1 === 'mercadopago') return pronto(res, ctx, 'Asociar Mercado Pago', 'Muy pronto vas a poder conectar tu cuenta de Mercado Pago con un botón para que cada venta entre directo a tu cuenta. Mientras tanto, las ventas se cobran a través de la plataforma y te liquidamos lo recaudado.'), true;
+  if (s1 === 'mercadopago') return await mercadoPago(req, res, ctx, url, s2), true;
   return redirigir(res, '/panel'), true;
 }
 
