@@ -134,6 +134,9 @@ function formEvento(res, ctx, ev, err = '') {
         <label class="check"><input type="checkbox" name="descargable" value="1" ${v.descargable ? 'checked' : ''}> Permitir que el comprador descargue el video</label>
         <small>Aparece un botón "Descargar" en el reproductor cuando termina la transmisión (o en el video grabado). Ojo: el archivo descargado se puede compartir.</small>
         <label>Repetición disponible (horas después de terminar, 0 = sin límite)</label><input type="number" name="repeticion_horas" min="0" max="2160" value="${esc(v.repeticion_horas != null ? v.repeticion_horas : 48)}">
+        ${v.tipo === 'grabado' ? '' : `<label class="check" style="margin-top:14px"><input type="checkbox" name="vender_repeticion" value="1" ${v.vender_repeticion ? 'checked' : ''}> Seguir vendiendo la repetición cuando termine</label>
+        <label>Precio de la repetición ($, vacío = el mismo de la entrada)</label><input type="number" name="precio_repeticion" min="0" step="1" value="${esc(v.precio_repeticion != null ? v.precio_repeticion : '')}">
+        <small>Quien no lo vio en vivo puede comprarlo después, mientras dure la repetición.</small>`}
       </div></div>
       <div class="fila" style="margin-top:18px"><button class="btn">${nuevo ? 'Crear evento' : 'Guardar cambios'}</button>
         ${nuevo ? '' : `<a class="btn sec" href="/${esc(ctx.p.slug)}/${v.id}" target="_blank">Ver página</a><a class="btn sec" href="/panel/eventos/${v.id}/transmision">Transmisión</a>`}</div>
@@ -159,6 +162,8 @@ async function guardarEvento(req, res, ctx, ev) {
     venta_activa: b.venta_activa ? 1 : 0,
     grabar: b.grabar ? 1 : 0,
     descargable: b.descargable ? 1 : 0,
+    vender_repeticion: b.vender_repeticion ? 1 : 0,
+    precio_repeticion: b.precio_repeticion !== undefined && String(b.precio_repeticion).trim() !== '' ? Math.max(0, Math.round(Number(b.precio_repeticion) || 0)) : null,
     repeticion_horas: Math.min(Math.max(parseInt(b.repeticion_horas, 10) || 0, 0), 2160),
   };
   if (!titulo) return formEvento(res, ctx, { ...(ev || {}), ...datos, fecha_input: b.fecha }, 'Poné un título.');

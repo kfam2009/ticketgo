@@ -10,6 +10,7 @@ const { mensaje } = require('../lib/reproductor');
 const auth = require('../lib/auth');
 const ventas = require('../lib/ventas');
 const D = require('../lib/datos');
+const { estadoEvento } = require('../lib/estado');
 
 const MAX_POR_COMPRA = 10;
 
@@ -21,19 +22,31 @@ function servirImagen(res, dataUrl) {
 
 const imgEvento = (e) => (e.imagen ? `/img-evento/${e.id}?v=${e.imagen.length}` : '');
 
-function tarjetaEvento(e, mostrarProductora) {
-  const enVivo = e.tipo === 'grabado' ? '<span class="pill cyan">VIDEO · VER CUANDO QUIERAS</span>' : e.fecha && new Date(e.fecha) <= new Date() ? '<span class="pill rojo">EN VIVO / HOY</span>' : '';
+function tarjetaEvento(e, mostrarProductora, repe = false) {
+  const enVivo = repe ? '<span class="pill cyan">REPETICIÓN</span>' : e.tipo === 'grabado' ? '<span class="pill cyan">VIDEO · VER CUANDO QUIERAS</span>' : e.fecha && new Date(e.fecha) <= new Date() ? '<span class="pill rojo">EN VIVO / HOY</span>' : '';
   return `<a class="ev" href="/${esc(e.slug)}/${e.id}">
     <div class="img" style="${e.imagen ? `background-image:url('${imgEvento(e)}')` : 'background:linear-gradient(135deg,#1d2029,#2a1418)'}">${enVivo}</div>
     <div class="cuerpo">${mostrarProductora ? `<span class="prod">${esc(e.productora)}</span>` : ''}
       <h3>${esc(e.titulo)}</h3><span class="muted">${e.tipo === 'grabado' ? 'Disponible para ver cuando quieras' : D.fechaLinda(e.fecha)}${e.lugar ? ' · ' + esc(e.lugar) : ''}</span>
-      <span class="precio">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</span></div></a>`;
+      <span class="precio">${(() => { const pr = repe && e.precio_repeticion != null ? Number(e.precio_repeticion) : Number(e.precio); return pr > 0 ? D.plata(pr) : 'Gratis'; })()}</span></div></a>`;
 }
 
 const listar = (where, args) => db.prepare(`SELECT e.id, e.titulo, e.fecha, e.lugar, e.precio, e.imagen, e.tipo, p.slug, p.nombre AS productora
     FROM eventos e JOIN productoras p ON p.id = e.productora_id
     WHERE e.estado = 'publicado' AND p.estado <> 'suspendida' AND (e.fecha IS NULL OR e.fecha >= ? OR e.tipo = 'grabado') ${where}
     ORDER BY e.fecha IS NULL, e.fecha LIMIT 60`).all(new Date(Date.now() - 12 * 3600 * 1000).toISOString(), ...args);
+
+/** Eventos terminados que siguen vendiendo la repetición (y la tienen disponible). */
+async function repeticiones(where, args) {
+  const evs = db.prepare(`SELECT e.*, p.slug, p.nombre AS productora FROM eventos e JOIN productoras p ON p.id = e.productora_id
+      WHERE e.estado = 'publicado' AND p.estado <> 'suspendida' AND e.tipo <> 'grabado' AND e.vender_repeticion = 1 AND e.venta_activa = 1
+        AND e.fecha < ? AND e.fecha > ? ${where} ORDER BY e.fecha DESC LIMIT 12`)
+    .all(new Date(Date.now() - 12 * 3600e3).toISOString(), new Date(Date.now() - 95 * 864e5).toISOString(), ...args);
+  const ok = await Promise.all(evs.map((e) => estadoEvento({ ...e, activo: 1 }).then((x) => x.estado === 'repeticion').catch(() => false)));
+  return evs.filter((_, i) => ok[i]);
+}
+const filaRepeticiones = (evs, mostrarProductora) => (evs.length ? `<h2>Repeticiones</h2><p class="sub" style="margin-top:-6px">¿Te lo perdiste? Miralo completo.</p>
+    <div class="grid">${evs.map((e) => tarjetaEvento(e, mostrarProductora, true)).join('')}</div>` : '');
 
 /* ------------------------------------------------------------------ PayPal (exterior) */
 /** Botón de PayPal. Hasta que se conecte la cuenta, el pedido se hace por WhatsApp con un link de pago. */
@@ -46,13 +59,15 @@ function paypalBloque(p, e) {
 }
 
 /* ------------------------------------------------------------------ portada */
-function portada(req, res) {
+async function portada(req, res) {
   const evs = listar("AND p.estado = 'activa'", []);
+  const repes = await repeticiones("AND p.estado = 'activa'", []);
   const cuerpo = `${intro('<span class="vivo"><i></i>En vivo</span> · Entradas <b>·</b> Transmisiones')}
     <section class="hero" style="padding-top:18px"><h1>Mirá en vivo los eventos<br>que te importan.</h1>
     <p class="sub" style="max-width:620px">Comprá tu entrada con Mercado Pago —o con PayPal si estás en el exterior— y recibí tu acceso al instante. Lo ves desde el celular, la compu o la tele.</p></section>
     <h2>Próximos eventos</h2>
     ${evs.length ? `<div class="grid">${evs.map((e) => tarjetaEvento(e, true)).join('')}</div>` : '<div class="card muted">Pronto vas a ver acá los próximos eventos.</div>'}
+    ${filaRepeticiones(repes, true)}
     <div class="card" style="margin-top:34px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;justify-content:space-between;border-color:rgba(76,201,240,.35)">
       <div><h3 style="font-size:24px">¿Sos productora u organizás eventos?</h3><span class="muted">Creá tu página, cargá tus eventos y cobrá con tu Mercado Pago. Vos transmitís, nosotros nos ocupamos de las entradas.</span></div>
       <a class="btn" href="/registro">Registrar mi productora</a></div>`;
@@ -60,13 +75,15 @@ function portada(req, res) {
 }
 
 /* ------------------------------------------------------------------ productora */
-function paginaProductora(req, res, p) {
+async function paginaProductora(req, res, p) {
   const evs = listar('AND p.id = ?', [p.id]);
+  const repes = await repeticiones('AND p.id = ?', [p.id]);
   const cuerpo = `${p.estado === 'test' ? '<div class="modotest">Esta productora está en modo prueba: las compras son de prueba y no se cobran.</div>' : ''}
     <div class="prodcab">${p.logo ? `<img src="/logo/${p.id}?v=${p.logo.length}" alt="">` : ''}<div><h1>${esc(p.nombre)}</h1>${p.descripcion ? `<p class="sub" style="margin:0">${esc(p.descripcion)}</p>` : ''}</div></div>
     <div class="fila" style="margin-bottom:10px">${p.whatsapp ? `<a class="btn sec chico" href="https://wa.me/${esc(p.whatsapp.replace(/\D/g, ''))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}${p.instagram ? `<a class="btn sec chico" href="https://instagram.com/${esc(p.instagram.replace(/^@/, ''))}" target="_blank" rel="noopener">Instagram</a>` : ''}</div>
     <h2>Próximos eventos</h2>
-    ${evs.length ? `<div class="grid">${evs.map((e) => tarjetaEvento(e, false)).join('')}</div>` : '<div class="card muted">No hay eventos publicados por ahora.</div>'}`;
+    ${evs.length ? `<div class="grid">${evs.map((e) => tarjetaEvento(e, false)).join('')}</div>` : '<div class="card muted">No hay eventos publicados por ahora.</div>'}
+    ${filaRepeticiones(repes, false)}`;
   enviar(res, 200, publico({ titulo: 'Eventos', cuerpo, productora: p }));
 }
 
@@ -80,13 +97,20 @@ async function paginaEvento(req, res, p, e) {
   const prueba = p.estado === 'test';
   const quedanCupo = e.cupo ? Math.max(0, Number(e.cupo) - ventas.vendidas(e.id)) : MAX_POR_COMPRA;
   const termino = e.tipo !== 'grabado' && e.fecha && new Date(e.fecha).getTime() < Date.now() - 12 * 3600 * 1000;
+  // Terminado: si la productora lo eligió, se sigue vendiendo la repetición mientras esté disponible
+  let repe = null;
+  if (termino && e.vender_repeticion) {
+    const est = await estadoEvento({ ...e, activo: 1 }).catch(() => null);
+    if (est && est.estado === 'repeticion') repe = est;
+  }
+  const precio = repe && e.precio_repeticion != null ? Number(e.precio_repeticion) : Number(e.precio);
   let motivo = '';
   if (p.estado === 'suspendida') motivo = 'La venta de esta productora está pausada.';
   else if (e.estado === 'borrador') motivo = 'Este evento todavía es un borrador (solo lo ves vos).';
   else if (!e.venta_activa) motivo = 'La venta para este evento está cerrada.';
-  else if (termino) motivo = 'Este evento ya terminó.';
+  else if (termino && !repe) motivo = 'Este evento ya terminó.';
   else if (quedanCupo < 1) motivo = 'Entradas agotadas.';
-  else if (!prueba && Number(e.precio) > 0 && !ventas.puedeCobrarMP(p)) motivo = 'La venta online todavía no está habilitada.';
+  else if (!prueba && precio > 0 && !ventas.puedeCobrarMP(p)) motivo = 'La venta online todavía no está habilitada.';
 
   let errores = [];
   const d = req.method === 'POST' ? await leerCuerpo(req) : {};
@@ -97,7 +121,7 @@ async function paginaEvento(req, res, p, e) {
     if (cantidad < 1 || cantidad > Math.min(MAX_POR_COMPRA, quedanCupo)) errores.push(`Elegí entre 1 y ${Math.min(MAX_POR_COMPRA, quedanCupo)} entradas.`);
     if (!limite('compra:' + ipDe(req), 20, 3600 * 1000)) errores.push('Demasiados intentos. Probá más tarde.');
     if (!errores.length) {
-      const monto = Math.round(cantidad * Number(e.precio) * 100) / 100;
+      const monto = Math.round(cantidad * precio * 100) / 100;
       const token = crypto.randomBytes(16).toString('hex');
       const r = db.prepare(`INSERT INTO ordenes (evento_id, productora_id, email, nombre, telefono, cantidad, monto, comision, estado, token, creado, modificado)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?)`).run(e.id, p.id, email, String(d.nombre || '').trim().slice(0, 120),
@@ -129,7 +153,8 @@ async function paginaEvento(req, res, p, e) {
         <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta)${Number(e.precio_usd) > 0 ? ', o con PayPal si estás en el exterior' : ''}.</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
         <li>${e.tipo === 'grabado' ? 'Abrís el link y lo mirás cuando quieras' : 'El día del evento lo abrís y mirás'}. Cada entrada funciona en una pantalla a la vez.</li></ol></div></div>
     <div class="card" style="position:sticky;top:80px">
-      <span class="muted">Entrada</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${Number(e.precio) > 0 ? D.plata(e.precio) : 'Gratis'}</div>${e.descargable ? '<p class="muted" style="margin:6px 0 0;font-size:14px">⬇ Incluye descarga del video para guardarlo en tu compu o celular.</p>' : ''}
+      ${repe ? `<span class="pill cyan">REPETICIÓN</span><p class="muted" style="margin:8px 0">El partido ya se jugó: comprá la entrada y miralo completo${repe.hasta ? ` hasta el <b style="color:#fff">${esc(D.fechaLinda(new Date(repe.hasta).toISOString(), true))}</b>` : ''}.</p>` : ''}
+      <span class="muted">${repe ? 'Repetición' : 'Entrada'}</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${precio > 0 ? D.plata(precio) : 'Gratis'}</div>${e.descargable ? '<p class="muted" style="margin:6px 0 0;font-size:14px">⬇ Incluye descarga del video para guardarlo en tu compu o celular.</p>' : ''}
       ${Number(e.precio_usd) > 0 ? `<div class="muted" style="margin-top:2px">Desde el exterior: <b style="color:#fff">USD ${esc(Number(e.precio_usd).toLocaleString('es-AR', { maximumFractionDigits: 2 }))}</b> con PayPal</div>` : ''}
       ${e.cupo && quedanCupo <= 20 && quedanCupo > 0 ? `<p class="pill amarillo">Quedan ${quedanCupo}</p>` : ''}
       ${motivo ? `<div class="aviso" style="margin-top:12px">${esc(motivo)}</div>` : `
@@ -139,9 +164,9 @@ async function paginaEvento(req, res, p, e) {
         <label>Tu email (ahí te llega el acceso)</label><input type="email" name="email" required maxlength="120" value="${esc(d.email || '')}" autocomplete="email">
         <label>Nombre (opcional)</label><input name="nombre" maxlength="120" value="${esc(d.nombre || '')}" autocomplete="name">
         <label>WhatsApp (opcional)</label><input name="telefono" maxlength="30" value="${esc(d.telefono || '')}" inputmode="tel">
-        <button class="btn ancho" style="margin-top:18px">${prueba ? 'Hacer compra de prueba' : Number(e.precio) > 0 ? 'Pagar con Mercado Pago' : 'Obtener acceso gratis'}</button>
+        <button class="btn ancho" style="margin-top:18px">${prueba ? 'Hacer compra de prueba' : precio > 0 ? 'Pagar con Mercado Pago' : 'Obtener acceso gratis'}</button>
       </form>
-      ${Number(e.precio_usd) > 0 ? paypalBloque(p, e) : ''}`}
+      ${Number(e.precio_usd) > 0 && !repe ? paypalBloque(p, e) : ''}`}
     </div></div>`;
   enviar(res, errores.length ? 422 : 200, publico({ titulo: e.titulo, cuerpo, productora: p, descripcion: `${e.titulo} — ${p.nombre}` }));
 }
@@ -305,7 +330,7 @@ async function webhookMP(req, res, url) {
 /* ------------------------------------------------------------------ enrutador */
 async function manejar(req, res, url, partes) {
   const p0 = partes[0];
-  if (!p0) return portada(req, res), true;
+  if (!p0) return await portada(req, res), true;
   if (p0 === 'logo' && /^\d+$/.test(partes[1] || '')) { const p = D.productora(Number(partes[1])); return servirImagen(res, p && p.logo), true; }
   if (p0 === 'img-evento' && /^\d+$/.test(partes[1] || '')) { const e = D.evento(Number(partes[1])); return servirImagen(res, e && e.imagen), true; }
   if (p0 === 'v' && partes[1]) return linkCodigo(req, res, partes[1]), true;
@@ -321,7 +346,7 @@ async function manejar(req, res, url, partes) {
   if (partes.length <= 2 && !D.RESERVADOS.has(p0)) {
     const p = D.productoraPorSlug(p0);
     if (!p) return false;
-    if (partes.length === 1) return paginaProductora(req, res, p), true;
+    if (partes.length === 1) return await paginaProductora(req, res, p), true;
     if (/^\d+$/.test(partes[1])) return await paginaEvento(req, res, p, D.evento(Number(partes[1]))), true;
   }
   return false;
