@@ -30,8 +30,9 @@ function eventoDe(a) {
   return ev;
 }
 
-async function fuentes(ev, est) {
-  if (est.estado === 'vivo') return [{ id: ev.cf_uid, url: await cf.urlHls(ev.cf_uid, 6) }];
+async function fuentes(ev, est, modoVar = false) {
+  // Modo VAR: el vivo se pide con DVR para poder volver atrás
+  if (est.estado === 'vivo') return [{ id: ev.cf_uid, url: (await cf.urlHls(ev.cf_uid, 6)) + (modoVar ? '?dvrEnabled=true' : '') }];
   if (est.estado === 'repeticion' || est.estado === 'grabado') {
     const urls = {};
     for (const u of new Set(est.partes.map((p) => p.uid))) urls[u] = await cf.urlHls(u, 6);
@@ -105,13 +106,13 @@ async function ver(req, res, t, accion) {
   const necesitaFuentes = accion === 'iniciar' || body.estado !== est.estado;
   let lista = [];
   try {
-    lista = necesitaFuentes ? await fuentes(ev, est) : [];
+    lista = necesitaFuentes ? await fuentes(ev, est, !!a.var) : [];
   } catch (e) {
     console.error('[ver]', e.message);
     return json(res, 200, { estado: 'error' });
   }
   const descargable = !!ev.descargable && (est.estado === 'repeticion' || est.estado === 'grabado');
-  return json(res, 200, { estado: est.estado, titulo: ev.titulo, descargable, fuentes: necesitaFuentes ? lista : undefined });
+  return json(res, 200, { estado: est.estado, titulo: ev.titulo, descargable, var: !!a.var, fuentes: necesitaFuentes ? lista : undefined });
 }
 
 async function manejar(req, res, url, partes) {

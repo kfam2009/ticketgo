@@ -16,7 +16,7 @@ const SEÑAL = { vivo: ['EN VIVO', 'rojo'], repeticion: ['Repetición', 'verde']
 const pillSeñal = (s) => `<span class="pill ${(SEÑAL[s] || SEÑAL.error)[1]}">${(SEÑAL[s] || SEÑAL.error)[0]}</span>`;
 // En modo test, las compras de prueba cuentan como ventas (para mostrar cómo se ven ventas y métricas)
 const VENDIDA = (p) => (p && p.estado === 'test' ? "IN ('aprobado', 'prueba')" : "= 'aprobado'");
-const ESTADOS_OR = { aprobado: ['Aprobada', 'verde'], prueba: ['Prueba', 'cyan'], pendiente: ['Pendiente', 'amarillo'], procesando: ['Procesando', 'amarillo'], rechazado: ['Rechazada', ''], devuelto: ['Devuelta', 'rojo'] };
+const ESTADOS_OR = { aprobado: ['Aprobada', 'verde'], prueba: ['Prueba', 'cyan'], pendiente: ['Pendiente', 'amarillo'], procesando: ['Procesando', 'amarillo'], rechazado: ['Rechazada', ''], devuelto: ['Devuelta', 'rojo'], cortesia: ['Cortesía', 'cyan'] };
 const pillOr = (s) => `<span class="pill ${(ESTADOS_OR[s] || ['', ''])[1]}">${(ESTADOS_OR[s] || [s])[0]}</span>`;
 
 function pagina(res, ctx, titulo, cuerpo, activo, codigo = 200) {
@@ -353,8 +353,41 @@ async function transmision(req, res, ctx, ev, url) {
     </div>`}
     <h2>Link para compartir</h2>
     <div class="card"><div class="dato"><code id="d4">${esc(baseUrl(req))}/${esc(ctx.p.slug)}/${ev.id}</code><button class="btn sec chico" data-copiar="d4">Copiar</button></div>
-    <small>Es la página de compra del evento. Compartila en redes y WhatsApp.</small></div>`;
+    <small>Es la página de compra del evento. Compartila en redes y WhatsApp.</small></div>
+    ${cortesiasHtml(req, ctx, ev, url)}`;
   pagina(res, ctx, 'Transmisión', cuerpo, 'eventos');
+}
+
+/* ------------------------------------------------------------------ cortesías / VAR */
+function cortesiasHtml(req, ctx, ev, url) {
+  const base = baseUrl(req);
+  const ords = db.prepare("SELECT * FROM ordenes WHERE evento_id = ? AND estado = 'cortesia' ORDER BY id DESC").all(ev.id);
+  const nueva = Number(url.searchParams.get('cortesia')) || 0;
+  const filas = ords.map((o) => {
+    const ac = db.prepare('SELECT var FROM accesos WHERE orden_id = ? LIMIT 1').get(o.id);
+    const links = ventas.accesosDe(o.id, base);
+    return `<details ${o.id === nueva ? 'open' : ''} style="margin-top:8px"><summary><b>${esc(o.nombre || 'Cortesía')}</b> · ${o.cantidad} ${o.cantidad === 1 ? 'acceso' : 'accesos'}${ac && ac.var ? ' <span class="pill rojo">VAR</span>' : ''}${o.email ? ` · <small>${esc(o.email)}</small>` : ''}</summary>
+      ${links.map((l, i) => `<div class="dato" style="margin-top:6px"><code id="c${o.id}_${i}">${esc(l.url)}</code><button class="btn sec chico" data-copiar="c${o.id}_${i}">Copiar</button></div>`).join('')}</details>`;
+  }).join('');
+  return `<h2 id="cortesias">Cortesías y acceso VAR</h2>
+    <div class="card">
+      <p class="muted" style="margin-top:0">Accesos sin cargo para prensa, sponsors, árbitros o la liga. No se cobran ni cuentan como venta. Con <b>modo VAR</b> el reproductor permite volver atrás durante el vivo, ver en cámara lenta y avanzar cuadro por cuadro.</p>
+      <form method="post" action="/panel/eventos/${ev.id}/cortesias" class="fila" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div style="flex:2;min-width:180px"><label>Para quién</label><input name="nombre" required maxlength="80" placeholder="Ej: Árbitros, Prensa, Liga"></div>
+        <div style="width:90px"><label>Cantidad</label><input name="cantidad" type="number" min="1" max="20" value="1"></div>
+        <div style="flex:2;min-width:180px"><label>Mail (opcional, se los mandamos)</label><input name="email" type="email" maxlength="120"></div>
+        <label class="check" style="margin:0 0 10px"><input type="checkbox" name="var" value="1"> Modo VAR</label>
+        <button class="btn">Generar</button></form>
+      ${filas || '<p class="muted" style="margin-bottom:0">Todavía no generaste cortesías.</p>'}
+    </div>`;
+}
+
+async function generarCortesias(req, res, ctx, ev) {
+  const b = await leerCuerpo(req);
+  const cantidad = Math.min(Math.max(parseInt(b.cantidad, 10) || 1, 1), 20);
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(b.email || '').trim()) ? String(b.email).trim().toLowerCase().slice(0, 120) : '';
+  const o = await ventas.crearCortesias(ev, ctx.p, { nombre: String(b.nombre || '').trim().slice(0, 80) || 'Cortesía', email, cantidad, modoVar: !!b.var }, baseUrl(req));
+  return redirigir(res, `/panel/eventos/${ev.id}/transmision?cortesia=${o.id}#cortesias`);
 }
 
 function accesoDePrueba(req, res, ctx, ev) {
@@ -398,7 +431,7 @@ async function ventasLista(req, res, ctx, url) {
   const ords = db.prepare(`SELECT o.*, e.titulo FROM ordenes o JOIN eventos e ON e.id = o.evento_id WHERE ${where} ORDER BY o.id DESC LIMIT 300`).all(...args);
   const base = baseUrl(req);
   const filas = ords.map((o) => {
-    const links = ['aprobado', 'prueba'].includes(o.estado) ? ventas.accesosDe(o.id, base) : [];
+    const links = ['aprobado', 'prueba', 'cortesia'].includes(o.estado) ? ventas.accesosDe(o.id, base) : [];
     return `<tr><td>#${o.id}<br><small>${D.fechaLinda(o.creado, true)}</small></td>
       <td>${esc(o.email)}${o.nombre ? `<br><small>${esc(o.nombre)}</small>` : ''}${o.telefono ? `<br><small>${esc(o.telefono)}</small>` : ''}</td>
       <td>${esc(o.titulo)}</td><td>${o.cantidad}</td><td>${D.plata(o.monto)}</td><td>${pillOr(o.estado)}</td>
@@ -576,6 +609,7 @@ async function manejar(req, res, url, partes) {
     if (s3 === 'partes' && !partes[4] && req.method === 'POST') return await accionPartes(req, res, ctx, ev, url), true;
     if (s3 === 'partes' && /^\d+$/.test(partes[4] || '')) return await subidaParte(req, res, ctx, ev, partes[4], partes[5] === 'lista'), true;
     if (s3 === 'prueba') return accesoDePrueba(req, res, ctx, ev), true;
+    if (s3 === 'cortesias' && req.method === 'POST') return await generarCortesias(req, res, ctx, ev), true;
     if (s3 === 'borrar' && req.method === 'POST') return await borrarEvento(req, res, ctx, ev), true;
     return redirigir(res, `/panel/eventos/${ev.id}`), true;
   }
