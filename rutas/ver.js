@@ -59,7 +59,9 @@ async function ver(req, res, t, accion) {
   const a = tk.acceso;
   const ahoraMs = Date.now();
   const iso = new Date().toISOString();
-  const deCompra = a.orden_id != null; // los accesos de prueba del panel no tienen bloqueo de pantalla
+  // Los accesos de prueba del panel y las cortesías no tienen bloqueo de pantalla (los maneja la productora)
+  const ord = a.orden_id != null ? db.prepare('SELECT estado FROM ordenes WHERE id = ?').get(a.orden_id) : null;
+  const deCompra = !!ord && ord.estado !== 'cortesia';
   if (accion === 'salir') {
     if (a.sesion === s) db.prepare('UPDATE accesos SET sesion_latido = 0 WHERE id = ?').run(a.id);
     return json(res, 200, { ok: true });

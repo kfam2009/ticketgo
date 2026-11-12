@@ -371,7 +371,7 @@ function cortesiasHtml(req, ctx, ev, url) {
   }).join('');
   return `<h2 id="cortesias">Cortesías y acceso VAR</h2>
     <div class="card">
-      <p class="muted" style="margin-top:0">Accesos sin cargo para prensa, sponsors, árbitros o la liga. No se cobran ni cuentan como venta. Con <b>modo VAR</b> el reproductor permite volver atrás durante el vivo, ver en cámara lenta y avanzar cuadro por cuadro.</p>
+      <p class="muted" style="margin-top:0">Accesos sin cargo para prensa, sponsors, árbitros o la liga. No se cobran ni cuentan como venta, y se pueden abrir en varias pantallas a la vez. Con <b>modo VAR</b> el reproductor permite volver atrás durante el vivo, ver en cámara lenta y avanzar cuadro por cuadro.</p>
       <form method="post" action="/panel/eventos/${ev.id}/cortesias" class="fila" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div style="flex:2;min-width:180px"><label>Para quién</label><input name="nombre" required maxlength="80" placeholder="Ej: Árbitros, Prensa, Liga"></div>
         <div style="width:90px"><label>Cantidad</label><input name="cantidad" type="number" min="1" max="20" value="1"></div>
