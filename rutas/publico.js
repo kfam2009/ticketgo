@@ -153,7 +153,7 @@ async function paginaEvento(req, res, p, e) {
         <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta)${Number(e.precio_usd) > 0 ? ', o con PayPal si estás en el exterior' : ''}.</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
         <li>${e.tipo === 'grabado' ? 'Abrís el link y lo mirás cuando quieras' : 'El día del evento lo abrís y mirás'}. Cada entrada funciona en una pantalla a la vez.</li></ol></div>
       <div class="card" style="margin-top:14px"><b>📺 Miralo en la tele</b><ul class="muted" style="margin:8px 0 0;padding-left:20px">
-        <li><b style="color:#fff">Smart TV:</b> en el navegador de la tele entrá a <b style="color:#fff">ticketgoplus.com</b>, te aparece un número de 4 cifras. En tu celular abrí tu entrada, tocá <b style="color:#fff">📺</b> y escribilo.</li>
+        <li><b style="color:#fff">Smart TV:</b> en el navegador de la tele entrá a <b style="color:#fff">ticketgoplus.com/tele</b>, te aparece un número de 4 cifras. En tu celular abrí tu entrada, tocá <b style="color:#fff">📺</b> y escribilo.</li>
         <li><b style="color:#fff">Chromecast o Apple TV:</b> tocá el ícono de transmitir en el reproductor.</li>
         <li><b style="color:#fff">Android TV / Google TV / Fire TV:</b> app TicketGo — con <b style="color:#fff">Downloader</b>, escribí <b style="color:#fff">ticketgoplus.com/app</b>.</li></ul></div></div>
     <div class="card" style="position:sticky;top:80px">
