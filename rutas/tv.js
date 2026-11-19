@@ -66,8 +66,102 @@ function pagina(numero = '', error = '', ok = '') {
   return suelta({ titulo: 'Ver en la TV', cuerpo });
 }
 
+
+/** Versión para el navegador del televisor (teles sin Android: Philips Saphi, Samsung, LG). Código ES5 simple. */
+function tele() {
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>TicketGo TV</title>
+<style>
+html,body{margin:0;height:100%;background:#0b0c10;color:#fff;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+#panel{position:absolute;left:0;top:0;width:100%;height:100%;text-align:center;background:#0b0c10}
+#caja{position:absolute;left:0;right:0;top:50%;margin-top:-230px}
+h1{font-size:44px;margin:0 0 6px}#tit{font-size:24px;color:#b4b9c4;margin:0 0 24px;min-height:30px}
+#fila{display:inline-block}
+#num{font-size:110px;font-weight:bold;color:#ffd600;letter-spacing:18px;line-height:1}
+#qr{display:inline-block;vertical-align:middle;margin-left:50px;background:#fff;padding:10px}
+#izq{display:inline-block;vertical-align:middle}
+#info{font-size:24px;line-height:1.5;margin-top:16px}
+#msg{font-size:28px;line-height:1.5;margin-top:10px}
+button,input{font-size:24px;padding:14px 26px;border-radius:10px;border:3px solid #444;background:#222;color:#fff;margin:22px 8px 0}
+button:focus,input:focus{border-color:#ffd600;outline:none;background:#333}
+#cod{display:none}
+video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000}
+#ayuda{position:absolute;left:0;right:0;bottom:0;padding:14px;font-size:20px;background:rgba(0,0,0,.7);text-align:center;display:none}
+</style></head><body>
+<video id="v" playsinline></video>
+<div id="panel"><div id="caja">
+ <h1>TicketGo</h1><p id="tit"></p>
+ <div id="fila"><div id="izq"><div id="num"></div><div id="info"></div></div><div id="qr"></div></div>
+ <div id="msg"></div>
+ <div><button id="bcod">Escribir el código de mi entrada</button></div>
+ <div id="cod"><input id="icod" maxlength="12" placeholder="ABCD-1234"><button id="ok">Ver</button></div>
+</div></div>
+<div id="ayuda">OK: pausa · ◀ ▶: 10 segundos · Atrás 2 veces: desvincular</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="/js/r.js"></script>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var v=$('v'),panel=$('panel'),T=null,S=null,parId=null,estado='',fuente='',hls=null,tLat=null,tPar=null,mirando=false,atras=0;
+function guardar(){try{localStorage.setItem('tgtv',JSON.stringify({t:T,s:S}))}catch(e){}}
+try{var g=JSON.parse(localStorage.getItem('tgtv')||'{}');T=g.t||null;S=g.s||null}catch(e){}
+function xhr(m,u,b,cb){var x=new XMLHttpRequest();x.open(m,u,true);x.timeout=15000;if(b)x.setRequestHeader('Content-Type','application/json');
+ x.onreadystatechange=function(){if(x.readyState!==4)return;var d=null;try{d=JSON.parse(x.responseText)}catch(e){}cb(x.status,d)};
+ x.ontimeout=function(){cb(0,null)};x.send(b?JSON.stringify(b):null)}
+function ver(tit,num,info,msg,qr,boton){panel.style.display='block';$('tit').innerHTML=tit||'';$('num').innerHTML=num||'';$('info').innerHTML=info||'';$('msg').innerHTML=msg||'';
+ $('fila').style.display=num?'inline-block':'none';$('qr').innerHTML='';$('bcod').parentNode.style.display=boton?'block':'none';
+ if(qr&&window.qrcode){try{var q=qrcode(0,'M');q.addData(qr);q.make();$('qr').innerHTML=q.createImgTag(6,0)}catch(e){}}
+ $('qr').style.display=($('qr').innerHTML?'inline-block':'none');if(boton)$('bcod').focus()}
+function parar(){try{if(hls){hls.destroy();hls=null}v.pause();v.removeAttribute('src');v.load()}catch(e){}fuente='';$('ayuda').style.display='none'}
+function emparejar(){mirando=false;clearTimeout(tLat);clearTimeout(tPar);parar();ver('Ver en este televisor','','','Conectando…',null,true);
+ xhr('POST','/tv/api/nuevo',{},function(st,d){if(!d||!d.numero){ver('Ver en este televisor','','','No hay conexión. Reintentando…',null,true);tPar=setTimeout(emparejar,5000);return}
+  parId=d.id;S=d.s;guardar();
+  ver('Ver en este televisor',d.numero,'En tu celular entrá a<br><b>ticketgoplus.com/tv</b><br>(o escaneá el código)<br>y escribí este número.','', location.protocol+'//'+location.host+'/tv?c='+d.numero,true);
+  tPar=setTimeout(consultar,2000)})}
+function consultar(){if(mirando||!parId)return;var id=parId;
+ xhr('GET','/tv/api/estado?id='+encodeURIComponent(id),null,function(st,d){if(mirando||id!==parId)return;
+  if(d&&d.listo){T=d.t;guardar();mirar()}else if(d&&d.vencido){emparejar()}else{tPar=setTimeout(consultar,2000)}})}
+$('bcod').onclick=function(){$('cod').style.display='block';$('icod').focus()};
+$('ok').onclick=function(){if(!S)S='tv-'+Math.random().toString(36).slice(2,14);$('msg').innerHTML='Revisando el código…';
+ xhr('POST','/tv/api/codigo',{codigo:$('icod').value,s:S},function(st,d){if(d&&d.t){T=d.t;S=d.s||S;guardar();parId=null;mirar()}else{$('msg').innerHTML=(d&&d.error)||'Sin conexión'}})};
+$('icod').onkeydown=function(e){if(e.keyCode===13)$('ok').onclick()};
+function mirar(){mirando=true;clearTimeout(tPar);ver('','','','Cargando…',null,false);pedir('iniciar')}
+function pedir(que){if(!mirando||!T)return;clearTimeout(tLat);
+ xhr('POST','/ver/'+encodeURIComponent(T)+'/'+que,{s:S,estado:estado},function(st,d){aplicar(d)})}
+function aplicar(d){if(!mirando)return;
+ if(!d){$('msg').innerHTML='Sin conexión, reintentando…';tLat=setTimeout(function(){pedir('latido')},8000);return}
+ if(d.expulsado||d.ocupado){parar();ver('','','','Tu entrada se está viendo en otra pantalla.<br>Para verla acá, vinculá este televisor de nuevo.',null,false);T=null;guardar();mirando=false;setTimeout(emparejar,6000);return}
+ if(d.error){parar();ver('','','',d.error+'<br>'+(d.detalle||''),null,false);T=null;guardar();mirando=false;setTimeout(emparejar,6000);return}
+ estado=d.estado;var hay=(d.estado==='vivo'||d.estado==='repeticion'||d.estado==='grabado');
+ if(hay){if(d.fuentes&&d.fuentes.length)reproducir(d.fuentes[0].url,d.fuentes[0].id);if(fuente)panel.style.display='none'}
+ else{parar();var m={espera:'Todavía no empezó la transmisión.<br>Arranca sola cuando llegue la señal.',procesando:'Terminó la transmisión.<br>Estamos preparando la repetición…',terminado:'Este evento terminó y la repetición ya no está disponible.'};
+  ver(d.titulo||'','','',m[d.estado]||'No disponible por ahora.',null,false)}
+ tLat=setTimeout(function(){pedir('latido')},20000)}
+function reproducir(url,id){if(fuente===id)return;parar();fuente=id;
+ var nativo=v.canPlayType&&v.canPlayType('application/vnd.apple.mpegurl');
+ if(window.Hls&&Hls.isSupported()){hls=new Hls({lowLatencyMode:false});hls.loadSource(url);hls.attachMedia(v);
+  hls.on(Hls.Events.MANIFEST_PARSED,function(){var p=v.play();if(p&&p.catch)p.catch(function(){})});
+  hls.on(Hls.Events.ERROR,function(e,x){if(x.fatal){fuente='';setTimeout(function(){pedir('iniciar')},3000)}})}
+ else if(nativo){v.src=url;var p=v.play();if(p&&p.catch)p.catch(function(){})}
+ else{fuente='';ver('','','','Este televisor no puede reproducir el video.<br>Probá con un Chromecast o un stick Android.',null,false);return}
+ panel.style.display='none';$('ayuda').style.display='block';setTimeout(function(){$('ayuda').style.display='none'},6000)}
+v.onerror=function(){if(mirando){fuente='';setTimeout(function(){pedir('iniciar')},3000)}};
+document.onkeydown=function(e){var k=e.keyCode;
+ if(mirando&&panel.style.display==='none'){
+  if(k===13||k===415||k===19||k===10252){if(v.paused){v.play()}else{v.pause()}$('ayuda').style.display='block';e.preventDefault();return}
+  if(k===37||k===412){try{v.currentTime=Math.max(0,v.currentTime-10)}catch(x){}e.preventDefault();return}
+  if(k===39||k===417){try{v.currentTime=v.currentTime+10}catch(x){}e.preventDefault();return}}
+ if((k===8||k===461||k===10009||k===27)&&mirando){var a=Date.now();if(a-atras<3000){
+   xhr('POST','/ver/'+encodeURIComponent(T)+'/salir',{s:S},function(){});T=null;guardar();emparejar()}else{atras=a;$('ayuda').innerHTML='Apretá Atrás otra vez para desvincular este televisor';$('ayuda').style.display='block'}
+  e.preventDefault()}};
+if(T&&S)mirar();else emparejar();
+})();
+</script></body></html>`;
+}
+
 async function manejar(req, res, url, partes) {
   if (partes[0] === 'app' && partes.length === 1) return redirigir(res, APK), true;
+  if (partes[0] === 'tele' && partes.length === 1) return enviar(res, 200, tele()), true;
   if (partes[0] !== 'tv') return false;
   limpiar();
 
