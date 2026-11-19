@@ -151,7 +151,11 @@ async function paginaEvento(req, res, p, e) {
       ${e.descripcion ? `<p style="white-space:pre-line">${esc(e.descripcion)}</p>` : ''}
       <div class="card" style="margin-top:14px"><b>Cómo funciona</b><ol class="muted" style="margin:8px 0 0;padding-left:20px">
         <li>Pagás con Mercado Pago (tarjeta, débito o dinero en cuenta)${Number(e.precio_usd) > 0 ? ', o con PayPal si estás en el exterior' : ''}.</li><li>Recibís al instante tu link de acceso, en pantalla y por mail.</li>
-        <li>${e.tipo === 'grabado' ? 'Abrís el link y lo mirás cuando quieras' : 'El día del evento lo abrís y mirás'}. Cada entrada funciona en una pantalla a la vez.</li></ol></div></div>
+        <li>${e.tipo === 'grabado' ? 'Abrís el link y lo mirás cuando quieras' : 'El día del evento lo abrís y mirás'}. Cada entrada funciona en una pantalla a la vez.</li></ol></div>
+      <div class="card" style="margin-top:14px"><b>📺 Miralo en la tele</b><ul class="muted" style="margin:8px 0 0;padding-left:20px">
+        <li><b style="color:#fff">Smart TV:</b> en el navegador de la tele entrá a <b style="color:#fff">ticketgoplus.com</b>, te aparece un número de 4 cifras. En tu celular abrí tu entrada, tocá <b style="color:#fff">📺</b> y escribilo.</li>
+        <li><b style="color:#fff">Chromecast o Apple TV:</b> tocá el ícono de transmitir en el reproductor.</li>
+        <li><b style="color:#fff">Android TV / Google TV / Fire TV:</b> app TicketGo — con <b style="color:#fff">Downloader</b>, escribí <b style="color:#fff">ticketgoplus.com/app</b>.</li></ul></div></div>
     <div class="card" style="position:sticky;top:80px">
       ${repe ? `<span class="pill cyan">REPETICIÓN</span><p class="muted" style="margin:8px 0">El partido ya se jugó: comprá la entrada y miralo completo${repe.hasta ? ` hasta el <b style="color:#fff">${esc(D.fechaLinda(new Date(repe.hasta).toISOString(), true))}</b>` : ''}.</p>` : ''}
       <span class="muted">${repe ? 'Repetición' : 'Entrada'}</span><div class="cond" style="font-size:38px;font-weight:800;line-height:1.1">${precio > 0 ? D.plata(precio) : 'Gratis'}</div>${e.descargable ? '<p class="muted" style="margin:6px 0 0;font-size:14px">⬇ Incluye descarga del video para guardarlo en tu compu o celular.</p>' : ''}
