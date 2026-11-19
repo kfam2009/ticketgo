@@ -86,7 +86,11 @@ button,input{font-size:24px;padding:14px 26px;border-radius:10px;border:3px soli
 button:focus,input:focus{border-color:#ffd600;outline:none;background:#333}
 #cod{display:none}
 video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000}
-#ayuda{position:absolute;left:0;right:0;bottom:0;padding:14px;font-size:20px;background:rgba(0,0,0,.7);text-align:center;display:none}
+#ctl{position:absolute;left:0;right:0;bottom:0;padding:22px 10px 30px;background:linear-gradient(transparent,rgba(0,0,0,.85));text-align:center;display:none}
+#ctl button{font-size:30px;padding:18px 34px;margin:0 10px;border-width:4px;min-width:150px}
+#ctl button:focus,#ctl button.f{border-color:#ffd600;background:#ffd600;color:#000}
+#ctl #cpp{min-width:220px}
+#cnota{font-size:20px;color:#ddd;margin-top:12px;min-height:24px}
 </style></head><body>
 <video id="v" playsinline></video>
 <div id="panel"><div id="caja">
@@ -96,7 +100,7 @@ video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000}
  <div><button id="bcod">Escribir el código de mi entrada</button></div>
  <div id="cod"><input id="icod" maxlength="12" placeholder="ABCD-1234"><button id="ok">Ver</button></div>
 </div></div>
-<div id="ayuda">OK: pausa · ◀ ▶: 10 segundos · Atrás 2 veces: desvincular</div>
+<div id="ctl"><button id="cmen">⏪ 10 s</button><button id="cpp">❚❚ Pausa</button><button id="cmas">10 s ⏩</button><button id="csal">✕ Salir</button><div id="cnota"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="/js/r.js"></script>
 <script>
@@ -112,7 +116,7 @@ function ver(tit,num,info,msg,qr,boton){panel.style.display='block';$('tit').inn
  $('fila').style.display=num?'inline-block':'none';$('qr').innerHTML='';$('bcod').parentNode.style.display=boton?'block':'none';
  if(qr&&window.qrcode){try{var q=qrcode(0,'M');q.addData(qr);q.make();$('qr').innerHTML=q.createImgTag(6,0)}catch(e){}}
  $('qr').style.display=($('qr').innerHTML?'inline-block':'none');if(boton)$('bcod').focus()}
-function parar(){try{if(hls){hls.destroy();hls=null}v.pause();v.removeAttribute('src');v.load()}catch(e){}fuente='';$('ayuda').style.display='none'}
+function parar(){try{if(hls){hls.destroy();hls=null}v.pause();v.removeAttribute('src');v.load()}catch(e){}fuente='';ocultarCtl()}
 function emparejar(){mirando=false;clearTimeout(tLat);clearTimeout(tPar);parar();ver('Ver en este televisor','','','Conectando…',null,true);
  xhr('POST','/tv/api/nuevo',{},function(st,d){if(!d||!d.numero){ver('Ver en este televisor','','','No hay conexión. Reintentando…',null,true);tPar=setTimeout(emparejar,5000);return}
   parId=d.id;S=d.s;guardar();
@@ -140,20 +144,36 @@ function aplicar(d){if(!mirando)return;
 function reproducir(url,id){if(fuente===id)return;parar();fuente=id;
  var nativo=v.canPlayType&&v.canPlayType('application/vnd.apple.mpegurl');
  if(window.Hls&&Hls.isSupported()){hls=new Hls({lowLatencyMode:false});hls.loadSource(url);hls.attachMedia(v);
-  hls.on(Hls.Events.MANIFEST_PARSED,function(){var p=v.play();if(p&&p.catch)p.catch(function(){})});
+  hls.on(Hls.Events.MANIFEST_PARSED,function(){var p=v.play();if(p&&p.catch)p.catch(function(){v.muted=true;v.play()})});
   hls.on(Hls.Events.ERROR,function(e,x){if(x.fatal){fuente='';setTimeout(function(){pedir('iniciar')},3000)}})}
- else if(nativo){v.src=url;var p=v.play();if(p&&p.catch)p.catch(function(){})}
+ else if(nativo){v.src=url;var p=v.play();if(p&&p.catch)p.catch(function(){v.muted=true;v.play()})}
  else{fuente='';ver('','','','Este televisor no puede reproducir el video.<br>Probá con un Chromecast o un stick Android.',null,false);return}
- panel.style.display='none';$('ayuda').style.display='block';setTimeout(function(){$('ayuda').style.display='none'},6000)}
+ panel.style.display='none';mostrarCtl()}
 v.onerror=function(){if(mirando){fuente='';setTimeout(function(){pedir('iniciar')},3000)}};
-document.onkeydown=function(e){var k=e.keyCode;
- if(mirando&&panel.style.display==='none'){
-  if(k===13||k===415||k===19||k===10252){if(v.paused){v.play()}else{v.pause()}$('ayuda').style.display='block';e.preventDefault();return}
-  if(k===37||k===412){try{v.currentTime=Math.max(0,v.currentTime-10)}catch(x){}e.preventDefault();return}
-  if(k===39||k===417){try{v.currentTime=v.currentTime+10}catch(x){}e.preventDefault();return}}
- if((k===8||k===461||k===10009||k===27)&&mirando){var a=Date.now();if(a-atras<3000){
-   xhr('POST','/ver/'+encodeURIComponent(T)+'/salir',{s:S},function(){});T=null;guardar();emparejar()}else{atras=a;$('ayuda').innerHTML='Apretá Atrás otra vez para desvincular este televisor';$('ayuda').style.display='block'}
-  e.preventDefault()}};
+var ctl=$('ctl'),bots=[$('cmen'),$('cpp'),$('cmas'),$('csal')],foco=1,tCtl=null,salir=0;
+function pintarPP(){$('cpp').innerHTML=v.paused?'▶ Seguir':'❚❚ Pausa'}
+function enfocar(i){foco=(i+bots.length)%bots.length;for(var j=0;j<bots.length;j++)bots[j].className=(j===foco?'f':'');try{bots[foco].focus()}catch(e){}}
+function mostrarCtl(){if(!mirando||panel.style.display!=='none')return;pintarPP();ctl.style.display='block';enfocar(foco);clearTimeout(tCtl);tCtl=setTimeout(ocultarCtl,7000)}
+function ocultarCtl(){ctl.style.display='none';$('cnota').innerHTML='';salir=0}
+function saltar(x){try{var d=v.currentTime+x;if(v.seekable&&v.seekable.length){d=Math.max(v.seekable.start(0),Math.min(d,v.seekable.end(v.seekable.length-1)-1))}v.currentTime=Math.max(0,d)}catch(e){}mostrarCtl()}
+function pp(){try{if(v.paused){var p=v.play();if(p&&p.catch)p.catch(function(){})}else v.pause()}catch(e){}setTimeout(pintarPP,100);mostrarCtl()}
+function desvincular(){var a=Date.now();if(a-salir<5000){xhr('POST','/ver/'+encodeURIComponent(T)+'/salir',{s:S},function(){});T=null;guardar();ocultarCtl();emparejar()}
+ else{salir=a;$('cnota').innerHTML='Apretá <b>Salir</b> otra vez para desvincular este televisor';mostrarCtl()}}
+$('cmen').onclick=function(){saltar(-10)};$('cmas').onclick=function(){saltar(10)};$('cpp').onclick=pp;$('csal').onclick=desvincular;
+v.onplay=pintarPP;v.onpause=pintarPP;
+v.onclick=mostrarCtl;document.onmousemove=function(){if(ctl.style.display!=='block')mostrarCtl()};
+function tecla(e){var k=e.keyCode||e.which;
+ if(!mirando||panel.style.display!=='none')return; /* en la pantalla del número, que el navegador maneje el foco */
+ if(k===415||k===19||k===10252||k===179||k===463){pp();e.preventDefault();return}
+ if(k===412||k===227){saltar(-10);e.preventDefault();return}
+ if(k===417||k===228){saltar(10);e.preventDefault();return}
+ if(k===8||k===461||k===10009||k===27||k===166){if(ctl.style.display==='block'){ocultarCtl()}else{mostrarCtl()}e.preventDefault();return}
+ if(ctl.style.display!=='block'){mostrarCtl();e.preventDefault();return}
+ if(k===37){enfocar(foco-1);mostrarCtl();e.preventDefault();return}
+ if(k===39){enfocar(foco+1);mostrarCtl();e.preventDefault();return}
+ if(k===13||k===32){bots[foco].onclick();e.preventDefault();return}
+ mostrarCtl()}
+if(document.addEventListener){document.addEventListener('keydown',tecla,true)}else{document.onkeydown=tecla}
 if(T&&S)mirar();else emparejar();
 })();
 </script></body></html>`;
