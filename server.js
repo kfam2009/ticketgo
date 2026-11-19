@@ -7,7 +7,7 @@ const auth = require('./lib/auth');
 const { enviar, json } = require('./lib/http');
 const { publico } = require('./lib/vistas');
 
-const rutas = [require('./rutas/ver'), require('./rutas/admin'), require('./rutas/panel'), require('./rutas/publico')];
+const rutas = [require('./rutas/ver'), require('./rutas/tv'), require('./rutas/admin'), require('./rutas/panel'), require('./rutas/publico')];
 
 const ESTATICOS = { '/img/logo.svg': 'image/svg+xml', '/img/icono.svg': 'image/svg+xml', '/img/icono.png': 'image/png' };
 
@@ -15,7 +15,7 @@ async function atender(req, res) {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname.replace(/\/+$/, '') || '/';
   if (p === '/salud') return json(res, 200, { ok: true });
-  if (p === '/robots.txt') return enviar(res, 200, 'User-agent: *\nDisallow: /panel\nDisallow: /admin\nDisallow: /ver\nDisallow: /v/\nDisallow: /compra\n', 'text/plain');
+  if (p === '/robots.txt') return enviar(res, 200, 'User-agent: *\nDisallow: /panel\nDisallow: /admin\nDisallow: /ver\nDisallow: /v/\nDisallow: /compra\nDisallow: /tv\n', 'text/plain');
   if (ESTATICOS[p]) {
     res.writeHead(200, { 'Content-Type': ESTATICOS[p], 'Cache-Control': 'public, max-age=86400' });
     return fs.createReadStream(path.join(__dirname, 'public', p)).pipe(res);

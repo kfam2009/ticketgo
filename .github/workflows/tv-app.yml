@@ -1,0 +1,37 @@
+name: App de TV
+
+on:
+  push:
+    branches: [main]
+    paths: ['tv-app/**', '.github/workflows/tv-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Armar la app
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: gradle -p tv-app assembleRelease --no-daemon --stacktrace
+      - name: Renombrar
+        run: cp tv-app/app/build/outputs/apk/release/app-release.apk TicketGo-TV.apk
+      - name: Publicar en la release tv-latest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tv-latest
+          name: App de TV (última)
+          body: "App TicketGo para Android TV / Google TV / Fire TV. Versión ${{ github.run_number }}. Instalar con Downloader: ticketgoplus.com/app"
+          files: TicketGo-TV.apk
+          make_latest: false
