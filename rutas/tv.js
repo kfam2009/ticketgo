@@ -179,9 +179,20 @@ if(T&&S)mirar();else emparejar();
 </script></body></html>`;
 }
 
+/** Navegadores de televisores (Samsung Tizen, LG webOS, Philips NetTV/Saphi, Sony Bravia, Hisense VIDAA, Android TV, Fire TV, HbbTV...). */
+const ES_TV = /smart-?tv|smarttv|tizen|web0s|webos|netcast|nettv|philips|saphi|hbbtv|bravia|vidaa|hisense|viera|aquos|roku|crkey|googletv|android ?tv|\baft[a-z]|appletv|tv safari|large screen|; tv\b|\btv;|opera tv|toshibatp|vewd/i;
+const esTv = (req) => ES_TV.test(String(req.headers['user-agent'] || ''));
+
 async function manejar(req, res, url, partes) {
+  // En el televisor, ticketgoplus.com y ticketgoplus.com/tv llevan directo a la pantalla del número
+  if (req.method === 'GET' && (partes.length === 0 || (partes[0] === 'tv' && partes.length === 1 && !url.searchParams.get('c'))) && esTv(req)) {
+    return redirigir(res, '/tele'), true;
+  }
   if (partes[0] === 'app' && partes.length === 1) return redirigir(res, APK), true;
-  if (partes[0] === 'tele' && partes.length === 1) return enviar(res, 200, tele()), true;
+  if (partes[0] === 'tele' && partes.length === 1) {
+    console.log('[tele] navegador:', String(req.headers['user-agent'] || '').slice(0, 300));
+    return enviar(res, 200, tele()), true;
+  }
   if (partes[0] !== 'tv') return false;
   limpiar();
 
