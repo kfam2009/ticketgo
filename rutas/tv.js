@@ -90,6 +90,9 @@ video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000}
 #ctl button{font-size:30px;padding:18px 34px;margin:0 10px;border-width:4px;min-width:150px}
 #ctl button:focus,#ctl button.f{border-color:#ffd600;background:#ffd600;color:#000}
 #ctl #cpp{min-width:220px}
+#ctl button:hover{border-color:#ffd600}
+#ctl button.ok,#ctl button.ok:focus{background:#2e7d32;border-color:#66bb6a;color:#fff}
+#aviso{position:absolute;left:50%;top:40px;margin-left:-160px;width:320px;text-align:center;font-size:40px;font-weight:bold;background:rgba(0,0,0,.75);border:3px solid #66bb6a;border-radius:16px;padding:16px 0;display:none}
 #cnota{font-size:20px;color:#ddd;margin-top:12px;min-height:24px}
 </style></head><body>
 <video id="v" playsinline></video>
@@ -100,7 +103,7 @@ video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000}
  <div><button id="bcod">Escribir el código de mi entrada</button></div>
  <div id="cod"><input id="icod" maxlength="12" placeholder="ABCD-1234"><button id="ok">Ver</button></div>
 </div></div>
-<div id="ctl"><button id="cmen">⏪ 10 s</button><button id="cpp">❚❚ Pausa</button><button id="cmas">10 s ⏩</button><button id="csal">✕ Salir</button><div id="cnota"></div></div>
+<div id="aviso"></div><div id="ctl"><button id="cmen">⏪ 10 s</button><button id="cpp">❚❚ Pausa</button><button id="cmas">10 s ⏩</button><button id="csal">✕ Salir</button><div id="cnota"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="/js/r.js"></script>
 <script>
@@ -159,7 +162,8 @@ function saltar(x){try{var d=v.currentTime+x;if(v.seekable&&v.seekable.length){d
 function pp(){try{if(v.paused){var p=v.play();if(p&&p.catch)p.catch(function(){})}else v.pause()}catch(e){}setTimeout(pintarPP,100);mostrarCtl()}
 function desvincular(){var a=Date.now();if(a-salir<5000){xhr('POST','/ver/'+encodeURIComponent(T)+'/salir',{s:S},function(){});T=null;guardar();ocultarCtl();emparejar()}
  else{salir=a;$('cnota').innerHTML='Apretá <b>Salir</b> otra vez para desvincular este televisor';mostrarCtl()}}
-$('cmen').onclick=function(){saltar(-10)};$('cmas').onclick=function(){saltar(10)};$('cpp').onclick=pp;$('csal').onclick=desvincular;
+var tAv=null;function avisar(b,txt){b.className='ok';setTimeout(function(){b.className=(bots[foco]===b?'f':'')},450);if(txt){var a=$('aviso');a.innerHTML=txt;a.style.display='block';clearTimeout(tAv);tAv=setTimeout(function(){a.style.display='none'},900)}}
+$('cmen').onclick=function(){avisar(this,'−10 s');saltar(-10)};$('cmas').onclick=function(){avisar(this,'+10 s');saltar(10)};$('cpp').onclick=function(){avisar(this,v.paused?'▶ Sigue':'❚❚ Pausa');pp()};$('csal').onclick=function(){avisar(this,'');desvincular()};
 v.onplay=pintarPP;v.onpause=pintarPP;
 v.onclick=mostrarCtl;document.onmousemove=function(){if(ctl.style.display!=='block')mostrarCtl()};
 function tecla(e){var k=e.keyCode||e.which;
